@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Piggy bank, matching the Budget server app's icon (budget/img/app.svg): a white silhouette on
+  the adaptive background. The coin slot, eye and nostrils are painted in the background blue so
+  they read as cut-outs. The mark sits within the 108->[18,90] adaptive safe zone, so a round or
+  squircle launcher mask does not clip it.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- tail -->
+    <path
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="3.6"
+        android:strokeLineCap="round"
+        android:pathData="M27,55 Q19,53 21.5,60 Q23.3,64.6 27.5,61.8" />
+    <!-- body -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M26,59 a26,20 0 1,0 52,0 a26,20 0 1,0 -52,0 Z" />
+    <!-- snout -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M66.5,58 a9.5,8.5 0 1,0 19,0 a9.5,8.5 0 1,0 -19,0 Z" />
+    <!-- ear -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M56,42 Q58,30 67,37 Q65,45 60,46 Z" />
+    <!-- front leg -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M43.2,74 L44.3,74 A3.2,3.2 0 0 1 47.5,77.2 L47.5,80.8 A3.2,3.2 0 0 1 44.3,84 L43.2,84 A3.2,3.2 0 0 1 40,80.8 L40,77.2 A3.2,3.2 0 0 1 43.2,74 Z" />
+    <!-- back leg -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M63.2,74 L64.3,74 A3.2,3.2 0 0 1 67.5,77.2 L67.5,80.8 A3.2,3.2 0 0 1 64.3,84 L63.2,84 A3.2,3.2 0 0 1 60,80.8 L60,77.2 A3.2,3.2 0 0 1 63.2,74 Z" />
+
+    <!-- coin slot (cut-out) -->
+    <path android:fillColor="#0082C9"
+        android:pathData="M43.8,38.5 L55.2,38.5 A1.8,1.8 0 0 1 55.2,42.1 L43.8,42.1 A1.8,1.8 0 0 1 43.8,38.5 Z" />
+    <!-- eye -->
+    <path android:fillColor="#0082C9"
+        android:pathData="M66,52 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0 Z" />
+    <!-- nostrils -->
+    <path android:fillColor="#0082C9"
+        android:pathData="M82.5,55.5 a1.5,1.5 0 1,0 3,0 a1.5,1.5 0 1,0 -3,0 Z" />
+    <path android:fillColor="#0082C9"
+        android:pathData="M82.5,60 a1.5,1.5 0 1,0 3,0 a1.5,1.5 0 1,0 -3,0 Z" />
+</vector>

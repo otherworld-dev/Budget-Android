@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Launcher-icon background: Nextcloud blue, the app's brand default (the runtime theme adopts
+         the user's instance colour after login, but the launcher icon stays fixed). -->
+    <color name="ic_launcher_background">#0082C9</color>
+</resources>

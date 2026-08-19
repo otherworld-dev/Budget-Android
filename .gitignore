@@ -1,0 +1,42 @@
+# Claude Code
+.claude/
+CLAUDE.md
+.claudeignore
+
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+local.properties
+
+# Android
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+bin/
+gen/
+out/
+release/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Signing — never commit keystores or their passwords
+*.jks
+*.keystore
+keystore.properties
+
+# IDE
+.idea/
+*.iml
+*.iws
+*.ipr
+.DS_Store
+
+# Logs
+*.log
+
+# Subagent-driven development scratch (ledger, briefs, review packages)
+.superpowers/

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Dark counterpart of values/themes.xml. The platform theme only paints the launch window
+     and anything drawn before Compose attaches; without this override a dark-mode cold start
+     flashed a white frame (the Light parent) before BudgetReceiptsTheme's dark scheme took
+     over. Compose still owns all real theming (see ui/theme/Theme.kt). -->
+<resources>
+    <style name="Theme.BudgetReceipts" parent="android:Theme.Material.NoActionBar" />
+</resources>

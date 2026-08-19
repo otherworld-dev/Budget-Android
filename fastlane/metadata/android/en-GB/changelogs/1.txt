@@ -1,0 +1,8 @@
+Initial release.
+
+- Photograph a receipt, or share an image to the app from anywhere
+- Your Budget server reads the receipt and fills in merchant, date and total
+- Review, adjust, and save — the photo is attached to the transaction
+- Works offline: photos are queued and processed when you're back online
+- Recent transactions list to confirm what was saved
+- Quick Add: record a transaction by hand when there's no receipt to photograph

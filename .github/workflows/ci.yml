@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Run unit tests
+        run: ./gradlew :app:testDebugUnitTest
+
+      - name: Android lint
+        run: ./gradlew :app:lintDebug
+
+      - name: Build unsigned release
+        run: ./gradlew :app:assembleRelease
+
+      - name: Check for proprietary dependencies in the release runtime classpath
+        run: |
+          ./gradlew :app:dependencies --configuration releaseRuntimeClasspath > deps.txt
+          if grep -E 'com\.google\.android\.gms|com\.google\.firebase|com\.google\.mlkit|play-services' deps.txt; then
+            echo "::error::Proprietary dependency (Play Services, Firebase, or ML Kit) found in the release runtime classpath. This breaks F-Droid eligibility — remove it before merging."
+            exit 1
+          fi
+          echo "No proprietary dependencies found in the release runtime classpath."
+          rm deps.txt
