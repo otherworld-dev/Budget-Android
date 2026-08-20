@@ -3,6 +3,8 @@ package dev.otherworld.budget.ui.onboarding
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dev.otherworld.budget.R
+import dev.otherworld.budget.core.StringResources
 import dev.otherworld.budget.data.auth.*
 import dev.otherworld.budget.data.theme.ThemePalette
 import kotlinx.coroutines.Job
@@ -41,6 +43,7 @@ class OnboardingViewModel @Inject constructor(
     private val loginFlow: LoginFlow,
     private val session: Session,
     private val theme: ThemePalette,
+    private val strings: StringResources,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(OnboardingUiState())
@@ -187,13 +190,13 @@ class OnboardingViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 status = Status.EDITING,
-                errorMessage = "No browser is available to finish signing in.",
+                errorMessage = strings.get(R.string.onboarding_no_browser),
             )
         }
     }
 
     private fun friendly(error: Throwable) =
-        error.message ?: "Couldn't reach that server. Check the address and try again."
+        error.message ?: strings.get(R.string.onboarding_server_unreachable)
 
     companion object {
         const val HTTP_DOWNGRADE_MESSAGE =

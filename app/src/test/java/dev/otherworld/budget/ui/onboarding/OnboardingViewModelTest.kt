@@ -1,6 +1,7 @@
 package dev.otherworld.budget.ui.onboarding
 
 import app.cash.turbine.test
+import dev.otherworld.budget.core.FakeStringResources
 import dev.otherworld.budget.data.auth.*
 import dev.otherworld.budget.data.theme.FakeThemePalette
 import kotlinx.coroutines.CompletableDeferred
@@ -66,7 +67,7 @@ class OnboardingViewModelTest {
             Credentials("https://cloud.example.com", "adam", "app-pw")
         ),
         store: CredentialStore = InMemoryCredentialStore(),
-    ) = OnboardingViewModel(FakeLoginFlow(start, poll), StoreBackedSession(store), FakeThemePalette()) to store
+    ) = OnboardingViewModel(FakeLoginFlow(start, poll), StoreBackedSession(store), FakeThemePalette(), FakeStringResources()) to store
 
     @Test
     fun `rejects an invalid address before touching the network`() = runTest(dispatcher) {
@@ -87,7 +88,7 @@ class OnboardingViewModelTest {
         // connect until the user has read the unencrypted-traffic warning and said yes. The gate
         // is the state machine, not the dialog -- so it is asserted here, without a UI.
         val loginFlow = RecordingLoginFlow()
-        val vm = OnboardingViewModel(loginFlow, StoreBackedSession(InMemoryCredentialStore()), FakeThemePalette())
+        val vm = OnboardingViewModel(loginFlow, StoreBackedSession(InMemoryCredentialStore()), FakeThemePalette(), FakeStringResources())
 
         vm.onServerUrlChanged("http://192.168.1.10")
         vm.onConnectClicked()
@@ -103,7 +104,7 @@ class OnboardingViewModelTest {
             poll = Result.success(Credentials("http://192.168.1.10", "adam", "app-pw")),
         )
         val store = InMemoryCredentialStore()
-        val vm = OnboardingViewModel(loginFlow, StoreBackedSession(store), FakeThemePalette())
+        val vm = OnboardingViewModel(loginFlow, StoreBackedSession(store), FakeThemePalette(), FakeStringResources())
 
         vm.onServerUrlChanged("http://192.168.1.10")
         vm.onConnectClicked()
@@ -122,7 +123,7 @@ class OnboardingViewModelTest {
     @Test
     fun `declining the http warning returns to editing with nothing sent`() = runTest(dispatcher) {
         val loginFlow = RecordingLoginFlow()
-        val vm = OnboardingViewModel(loginFlow, StoreBackedSession(InMemoryCredentialStore()), FakeThemePalette())
+        val vm = OnboardingViewModel(loginFlow, StoreBackedSession(InMemoryCredentialStore()), FakeThemePalette(), FakeStringResources())
 
         vm.onServerUrlChanged("http://192.168.1.10")
         vm.onConnectClicked()
@@ -137,7 +138,7 @@ class OnboardingViewModelTest {
     @Test
     fun `an https address never sees the http confirmation step`() = runTest(dispatcher) {
         val loginFlow = RecordingLoginFlow()
-        val vm = OnboardingViewModel(loginFlow, StoreBackedSession(InMemoryCredentialStore()), FakeThemePalette())
+        val vm = OnboardingViewModel(loginFlow, StoreBackedSession(InMemoryCredentialStore()), FakeThemePalette(), FakeStringResources())
 
         vm.onServerUrlChanged("cloud.example.com")
         vm.onConnectClicked()
@@ -219,6 +220,7 @@ class OnboardingViewModelTest {
             ),
             StoreBackedSession(InMemoryCredentialStore()),
             theme,
+            FakeStringResources(),
         )
 
         vm.onServerUrlChanged("cloud.example.com")
@@ -241,6 +243,7 @@ class OnboardingViewModelTest {
             ),
             StoreBackedSession(InMemoryCredentialStore()),
             theme,
+            FakeStringResources(),
         )
 
         vm.onServerUrlChanged("cloud.example.com")
@@ -287,7 +290,7 @@ class OnboardingViewModelTest {
             )
             override suspend fun poll(start: LoginFlowStart) = pollGate.await()
         }
-        val vm = OnboardingViewModel(gatedLoginFlow, StoreBackedSession(store), FakeThemePalette())
+        val vm = OnboardingViewModel(gatedLoginFlow, StoreBackedSession(store), FakeThemePalette(), FakeStringResources())
 
         vm.onServerUrlChanged("cloud.example.com")
         vm.onConnectClicked()

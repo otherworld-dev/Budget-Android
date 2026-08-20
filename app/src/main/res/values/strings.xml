@@ -122,4 +122,16 @@
     <string name="welcome_step3_body">Check the details — split them across categories if you like — and save. Captured offline? It\'s queued and sent the moment you\'re back online.</string>
     <string name="welcome_ocr_notice">Receipt scanning is a feature of your Budget server — you\'ll find it in Budget\'s settings in Nextcloud. Without it, you can still capture receipts and enter the details yourself.</string>
     <string name="welcome_get_started">Get started</string>
+
+    <!-- ViewModel-layer messages (resolved via StringResources). capture_no_accounts and
+         capture_ocr_unavailable above are reused where Review/Quick Add show the same copy. -->
+    <string name="catalog_offline_no_accounts">Can\'t reach your Budget server, so there are no accounts to choose from yet.</string>
+    <string name="amount_hint">Enter an amount like 24.31</string>
+    <string name="save_in_flight">Still saving this transaction…</string>
+    <string name="save_queued">Couldn\'t reach your server. This transaction is queued and will be sent automatically.</string>
+    <string name="review_split_unavailable">Can\'t split this by item — the items don\'t add up to the total.</string>
+    <string name="review_extract_failed">Couldn\'t read this receipt — enter the details below.</string>
+    <string name="review_split_saved_error">Saved, but couldn\'t split it by item.</string>
+    <string name="onboarding_no_browser">No browser is available to finish signing in.</string>
+    <string name="onboarding_server_unreachable">Couldn\'t reach that server. Check the address and try again.</string>
 </resources>

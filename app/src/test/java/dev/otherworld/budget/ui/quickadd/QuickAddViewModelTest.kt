@@ -1,5 +1,6 @@
 package dev.otherworld.budget.ui.quickadd
 
+import dev.otherworld.budget.core.FakeStringResources
 import dev.otherworld.budget.data.remote.BudgetApiError
 import dev.otherworld.budget.data.remote.CreateTransactionRequest
 import dev.otherworld.budget.data.remote.CreatedTransaction
@@ -42,6 +43,7 @@ class QuickAddViewModelTest {
         queue = queue,
         catalog = CatalogRepository(api),
         lastAccount = FakeLastAccount(lastAccountId),
+        strings = FakeStringResources(),
         clock = { today },
     ) to queue
 
@@ -155,7 +157,7 @@ class QuickAddViewModelTest {
     fun `a successful save remembers the account for next time`() = runTest(dispatcher) {
         val lastAccount = FakeLastAccount(null)
         val queue = FakeQuickAddQueue()
-        val vm = QuickAddViewModel(queue, CatalogRepository(FakeBudgetApi()), lastAccount) { today }
+        val vm = QuickAddViewModel(queue, CatalogRepository(FakeBudgetApi()), lastAccount, FakeStringResources()) { today }
         advanceUntilIdle()
 
         vm.onAmountChanged("5.00")

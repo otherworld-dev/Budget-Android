@@ -4,6 +4,8 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dev.otherworld.budget.R
+import dev.otherworld.budget.core.StringResources
 import dev.otherworld.budget.data.prefs.LastAccountStore
 import dev.otherworld.budget.data.remote.BudgetApiError
 import dev.otherworld.budget.data.remote.CreateTransactionRequest
@@ -124,6 +126,7 @@ class ReviewViewModel @Inject constructor(
     private val queue: ReceiptQueue,
     private val catalog: CatalogRepository,
     private val lastAccount: LastAccountStore,
+    private val strings: StringResources,
     private val clock: () -> LocalDate = { LocalDate.now() },
 ) : ViewModel() {
 
@@ -255,7 +258,7 @@ class ReviewViewModel @Inject constructor(
             splitRows = rows,
             splitBlockedNote =
                 if (splitsAvailable && !splittable && lineItems.isNotEmpty())
-                    "Can't split this by item — the items don't add up to the total."
+                    strings.get(R.string.review_split_unavailable)
                 else null,
         )
     }
@@ -285,10 +288,8 @@ class ReviewViewModel @Inject constructor(
 
     /** Word-for-word Quick Add's picker copy, so the same blockage reads the same everywhere. */
     private fun accountsMessageFor(accounts: List<Account>?): String? = when {
-        accounts == null ->
-            "Can't reach your Budget server, so there are no accounts to choose from yet."
-        accounts.isEmpty() ->
-            "Add an account in Budget on Nextcloud to start saving transactions."
+        accounts == null -> strings.get(R.string.catalog_offline_no_accounts)
+        accounts.isEmpty() -> strings.get(R.string.capture_no_accounts)
         else -> null
     }
 
@@ -308,9 +309,9 @@ class ReviewViewModel @Inject constructor(
         // either). Do not edit without CaptureScreen's copy -- and never add a link.
         BudgetApiError.OcrNotConfigured.message,
         BudgetApiError.OcrQuotaExhausted.message ->
-            "Receipt scanning isn't set up on your Budget server — see Budget's settings in Nextcloud."
+            strings.get(R.string.capture_ocr_unavailable)
         BudgetApiError.ExtractionFailed.message ->
-            "Couldn't read this receipt — enter the details below."
+            strings.get(R.string.review_extract_failed)
         else -> stored
     }
 
@@ -321,7 +322,7 @@ class ReviewViewModel @Inject constructor(
 
     fun onTotalChanged(value: String) = _uiState.update { state ->
         val invalid = value.isNotBlank() && Money.parse(value, state.currency) == null
-        state.copy(totalText = value, totalError = if (invalid) "Enter an amount like 24.31" else null)
+        state.copy(totalText = value, totalError = if (invalid) strings.get(R.string.amount_hint) else null)
             // The total is the split's one editable input: lowering it below the items' sum stops the
             // receipt reconciling, so the rows, splittable and (if it was on) splitEnabled all update.
             .recomputeSplit(draftLineItems, draftTax, draftDiscount, draftSuggestedCategoryId)
@@ -384,7 +385,7 @@ class ReviewViewModel @Inject constructor(
                 lastAccount.set(accountId)
                 _uiState.update { it.copy(
                     saving = false, saved = true,
-                    postNotice = created.splitsError?.let { "Saved, but couldn't split it by item." },
+                    postNotice = created.splitsError?.let { strings.get(R.string.review_split_saved_error) },
                 ) }
             }.onFailure { error ->
                 _uiState.update { it.copy(saving = false, saveError = messageFor(error)) }
@@ -416,9 +417,8 @@ class ReviewViewModel @Inject constructor(
      * thing verbatim, so the same failure reads the same sentence from either screen.
      */
     private fun messageFor(error: Throwable): String = when {
-        error is PostAlreadyInFlightException -> "Still saving this transaction…"
-        (error as? BudgetApiError)?.isRetryable() == true ->
-            "Couldn't reach your server. This transaction is queued and will be sent automatically."
+        error is PostAlreadyInFlightException -> strings.get(R.string.save_in_flight)
+        (error as? BudgetApiError)?.isRetryable() == true -> strings.get(R.string.save_queued)
         error is BudgetApiError.IdempotencyKeyConflict -> ReceiptRepository.KEY_CONFLICT_MESSAGE
         else -> ReceiptRepository.INTERRUPTED_POST_MESSAGE
     }

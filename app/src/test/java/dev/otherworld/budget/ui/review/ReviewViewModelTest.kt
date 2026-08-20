@@ -1,6 +1,7 @@
 package dev.otherworld.budget.ui.review
 
 import androidx.lifecycle.SavedStateHandle
+import dev.otherworld.budget.core.FakeStringResources
 import dev.otherworld.budget.data.prefs.LastAccountStore
 import dev.otherworld.budget.data.remote.BudgetApiError
 import dev.otherworld.budget.data.remote.CreateTransactionRequest
@@ -133,6 +134,7 @@ class ReviewViewModelTest {
         queue = queue,
         catalog = CatalogRepository(api),
         lastAccount = FakeLastAccount(lastAccountId),
+        strings = FakeStringResources(),
         clock = { today },
     ) to queue
 
@@ -598,6 +600,7 @@ class ReviewViewModelTest {
             queue = queue,
             catalog = CatalogRepository(FakeBudgetApi()),
             lastAccount = FakeLastAccount(null),
+            strings = FakeStringResources(),
             clock = { today },
         )
         advanceUntilIdle()

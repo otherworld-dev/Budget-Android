@@ -3,6 +3,8 @@ package dev.otherworld.budget.ui.quickadd
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dev.otherworld.budget.R
+import dev.otherworld.budget.core.StringResources
 import dev.otherworld.budget.data.prefs.LastAccountStore
 import dev.otherworld.budget.data.remote.BudgetApiError
 import dev.otherworld.budget.data.remote.CreateTransactionRequest
@@ -106,6 +108,7 @@ class QuickAddViewModel @Inject constructor(
     private val queue: ReceiptQueue,
     private val catalog: CatalogRepository,
     private val lastAccount: LastAccountStore,
+    private val strings: StringResources,
     private val clock: () -> LocalDate = { LocalDate.now() },
 ) : ViewModel() {
 
@@ -141,10 +144,8 @@ class QuickAddViewModel @Inject constructor(
                 // Review -- the pickers come from the server, so a cold start with no connectivity
                 // cannot save (spec section 7's "deliberate v1 simplification").
                 accountsMessage = when {
-                    accounts == null ->
-                        "Can't reach your Budget server, so there are no accounts to choose from yet."
-                    accounts.isEmpty() ->
-                        "Add an account in Budget on Nextcloud to start saving transactions."
+                    accounts == null -> strings.get(R.string.catalog_offline_no_accounts)
+                    accounts.isEmpty() -> strings.get(R.string.capture_no_accounts)
                     else -> null
                 },
             )
@@ -158,7 +159,7 @@ class QuickAddViewModel @Inject constructor(
 
     fun onAmountChanged(value: String) = _uiState.update { state ->
         val invalid = value.isNotBlank() && Money.parse(value, state.currency) == null
-        state.copy(amountText = value, amountError = if (invalid) "Enter an amount like 24.31" else null)
+        state.copy(amountText = value, amountError = if (invalid) strings.get(R.string.amount_hint) else null)
     }
 
     fun onSaveClicked() {
@@ -237,9 +238,8 @@ class QuickAddViewModel @Inject constructor(
      * [QuickAddUiState.handedToQueue] is. It only has to tell them where their money went.
      */
     private fun messageFor(error: Throwable): String = when {
-        error is PostAlreadyInFlightException -> "Still saving this transaction…"
-        (error as? BudgetApiError)?.isRetryable() == true ->
-            "Couldn't reach your server. This transaction is queued and will be sent automatically."
+        error is PostAlreadyInFlightException -> strings.get(R.string.save_in_flight)
+        (error as? BudgetApiError)?.isRetryable() == true -> strings.get(R.string.save_queued)
         error is BudgetApiError.IdempotencyKeyConflict -> ReceiptRepository.KEY_CONFLICT_MESSAGE
         else -> ReceiptRepository.INTERRUPTED_POST_MESSAGE
     }

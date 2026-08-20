@@ -169,6 +169,10 @@ private fun OnboardingScreenPreview() {
                     override suspend fun refresh() = Unit
                     override fun refreshInBackground() = Unit
                 },
+                strings = object : dev.otherworld.budget.core.StringResources {
+                    override fun get(id: Int) = ""
+                    override fun get(id: Int, vararg formatArgs: Any) = ""
+                },
             ),
         )
     }
