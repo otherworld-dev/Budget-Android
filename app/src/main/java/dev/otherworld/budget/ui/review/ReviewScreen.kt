@@ -19,6 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -56,7 +57,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import dev.otherworld.budget.R
 import dev.otherworld.budget.domain.model.Category
-import dev.otherworld.budget.domain.model.LineItem
 import dev.otherworld.budget.domain.model.Money
 import dev.otherworld.budget.ui.components.AccountDropdown
 import dev.otherworld.budget.ui.components.CategoryDropdown
@@ -203,12 +203,16 @@ fun ReviewScreen(
         )
 
         LineItemsOrSplitSection(
-            lineItems = uiState.lineItems,
+            editableItems = uiState.editableItems,
             splittable = uiState.splittable,
             splitEnabled = uiState.splitEnabled,
             splitRows = uiState.splitRows,
             splitBlockedNote = uiState.splitBlockedNote,
             categories = uiState.categories,
+            onItemDescriptionChanged = viewModel::onItemDescriptionChanged,
+            onItemAmountChanged = viewModel::onItemAmountChanged,
+            onItemAdded = viewModel::onItemAdded,
+            onItemRemoved = viewModel::onItemRemoved,
             onSplitToggled = viewModel::onSplitToggled,
             onSplitCategorySelected = viewModel::onSplitCategorySelected,
         )
@@ -327,20 +331,26 @@ fun ReviewScreen(
  * guard around this section's call site). [splitBlockedNote] explains an unreconciling receipt on
  * a splits-capable server, in the same tinted-notice style as [ReviewUiState.saveError].
  *
- * The heading is omitted entirely when there is nothing to show.
+ * When not splitting, each item is editable -- description, amount and a delete -- with an "Add item"
+ * button, so a receipt whose per-item costs (or line count) OCR misread can be corrected until it
+ * reconciles and the split re-appears. The heading is omitted entirely when there are no items.
  */
 @Composable
 private fun LineItemsOrSplitSection(
-    lineItems: List<LineItem>,
+    editableItems: List<EditableItemUi>,
     splittable: Boolean,
     splitEnabled: Boolean,
     splitRows: List<SplitRowUi>,
     splitBlockedNote: String?,
     categories: List<Category>,
+    onItemDescriptionChanged: (Int, String) -> Unit,
+    onItemAmountChanged: (Int, String) -> Unit,
+    onItemAdded: () -> Unit,
+    onItemRemoved: (Int) -> Unit,
     onSplitToggled: (Boolean) -> Unit,
     onSplitCategorySelected: (Int, Long?) -> Unit,
 ) {
-    if (lineItems.isEmpty()) return
+    if (editableItems.isEmpty()) return
 
     Spacer(Modifier.height(20.dp))
 
@@ -412,14 +422,25 @@ private fun LineItemsOrSplitSection(
                     }
                 }
             } else {
-                lineItems.forEachIndexed { index, item ->
+                editableItems.forEachIndexed { index, item ->
                     if (index > 0) {
                         HorizontalDivider(
                             modifier = Modifier.padding(vertical = 8.dp),
                             color = MaterialTheme.colorScheme.outlineVariant,
                         )
                     }
-                    ItemAmountRow(item.description, item.amount?.format().orEmpty())
+                    EditableItemRow(
+                        item = item,
+                        onDescriptionChanged = { onItemDescriptionChanged(index, it) },
+                        onAmountChanged = { onItemAmountChanged(index, it) },
+                        onRemoved = { onItemRemoved(index) },
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = onItemAdded, modifier = Modifier.align(Alignment.Start)) {
+                    Icon(Icons.Default.Add, contentDescription = null)
+                    Spacer(Modifier.width(4.dp))
+                    Text(stringResource(R.string.review_add_item))
                 }
             }
         }
@@ -466,15 +487,53 @@ private fun ItemAmountRow(description: String, amount: String) {
     }
 }
 
+/**
+ * An editable receipt line: description and amount fields plus a delete, for correcting what OCR
+ * misread. The amount uses a decimal keyboard and is parsed leniently (like the Total field); a
+ * blank or unreadable amount keeps the receipt non-splittable rather than erroring.
+ */
+@Composable
+private fun EditableItemRow(
+    item: EditableItemUi,
+    onDescriptionChanged: (String) -> Unit,
+    onAmountChanged: (String) -> Unit,
+    onRemoved: () -> Unit,
+) {
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        OutlinedTextField(
+            value = item.description,
+            onValueChange = onDescriptionChanged,
+            label = { Text(stringResource(R.string.review_item_name)) },
+            singleLine = true,
+            modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(8.dp))
+        OutlinedTextField(
+            value = item.amountText,
+            onValueChange = onAmountChanged,
+            label = { Text(stringResource(R.string.review_item_amount)) },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Decimal,
+                imeAction = ImeAction.Done,
+            ),
+            modifier = Modifier.width(120.dp),
+        )
+        IconButton(onClick = onRemoved) {
+            Icon(Icons.Default.Close, contentDescription = stringResource(R.string.review_remove_item))
+        }
+    }
+}
+
 @Preview(showBackground = true)
 @Composable
 private fun LineItemsOrSplitSectionPreview() {
     MaterialTheme {
         Column(modifier = Modifier.padding(16.dp)) {
             LineItemsOrSplitSection(
-                lineItems = listOf(
-                    LineItem("Bread", Money(BigDecimal("2.50"), "GBP")),
-                    LineItem("Milk", Money(BigDecimal("1.20"), "GBP")),
+                editableItems = listOf(
+                    EditableItemUi("Bread", "2.50"),
+                    EditableItemUi("Milk", "1.20"),
                 ),
                 splittable = true,
                 splitEnabled = true,
@@ -486,6 +545,10 @@ private fun LineItemsOrSplitSectionPreview() {
                 ),
                 splitBlockedNote = null,
                 categories = listOf(Category(1L, "Groceries", null), Category(2L, "Household", null)),
+                onItemDescriptionChanged = { _, _ -> },
+                onItemAmountChanged = { _, _ -> },
+                onItemAdded = {},
+                onItemRemoved = {},
                 onSplitToggled = {},
                 onSplitCategorySelected = { _, _ -> },
             )
