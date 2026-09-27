@@ -589,7 +589,7 @@ class ReviewViewModelTest {
 
             val state = vm.uiState.value
             assertNull(state.accountsMessage)
-            assertEquals(2, state.accounts.size)
+            assertEquals(3, state.accounts.size)
             assertNotNull(state.selectedAccountId)
             // Retry must not rebuild the form from the stored row -- edits survive.
             assertEquals("Typed while offline", state.merchant)

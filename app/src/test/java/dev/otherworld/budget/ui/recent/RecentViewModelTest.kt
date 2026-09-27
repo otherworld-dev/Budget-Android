@@ -27,7 +27,7 @@ class RecentViewModelTest {
     @Test
     fun `loads transactions on init`() = runTest(dispatcher) {
         val vm = RecentViewModel(FakeBudgetApi(), store()); advanceUntilIdle()
-        assertEquals(2, vm.uiState.value.transactions.size)
+        assertEquals(4, vm.uiState.value.transactions.size)
         assertFalse(vm.uiState.value.loading)
     }
 
@@ -40,7 +40,7 @@ class RecentViewModelTest {
         vm.refresh(); advanceUntilIdle()
 
         assertNotNull(vm.uiState.value.error)
-        assertEquals(2, vm.uiState.value.transactions.size)
+        assertEquals(4, vm.uiState.value.transactions.size)
     }
 
     @Test
