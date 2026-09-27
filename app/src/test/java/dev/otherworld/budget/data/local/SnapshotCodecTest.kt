@@ -1,6 +1,7 @@
 package dev.otherworld.budget.data.local
 
 import dev.otherworld.budget.data.remote.fake.FakeCheckData
+import dev.otherworld.budget.domain.model.Account
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -14,11 +15,24 @@ import java.math.BigDecimal
 class SnapshotCodecTest {
 
     @Test fun `accounts round-trip, including a negative balance and a null balance`() {
-        val back = SnapshotCodec.decodeAccounts(SnapshotCodec.encodeAccounts(FakeCheckData.accounts))!!
-        assertEquals(FakeCheckData.accounts.size, back.size)
-        assertEquals(FakeCheckData.accounts, back)
+        // FakeCheckData.accounts has no account with a null balance -- every one of its rows
+        // carries a real Money, including "Old ISA" at exactly 0.00. Account's own KDoc is explicit
+        // that null and zero must never be confused, so a hand-built account with balance = null
+        // (never fetched, e.g. an older server's response) is added here to cover that case
+        // distinctly from the zero-balance one.
+        val noBalanceYet = Account(id = 4, name = "New Account", currency = "GBP")
+        val accounts = FakeCheckData.accounts + noBalanceYet
+
+        val back = SnapshotCodec.decodeAccounts(SnapshotCodec.encodeAccounts(accounts))!!
+        assertEquals(accounts.size, back.size)
+        assertEquals(accounts, back)
         // FakeCheckData.accounts[1] ("Joint Account") carries a negative balance.
         assertEquals(BigDecimal("-45.10"), back[1].balance!!.amount)
+        // "Old ISA" is a real, zero balance -- not null.
+        assertEquals(BigDecimal("0.00"), back[2].balance!!.amount)
+        // The hand-built account's balance/balanceInBase must survive as null, not as zero.
+        assertNull(back.last().balance)
+        assertNull(back.last().balanceInBase)
     }
 
     @Test fun `categories round-trip`() {
