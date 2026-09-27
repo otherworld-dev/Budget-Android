@@ -40,6 +40,14 @@ class FakeBudgetApi(
      * answering -- the per-section failure case [nextError] cannot reach, since it fails them all.
      */
     var failBills: Boolean = false,
+    /**
+     * Fails [budgetStatus] alone with a 404, leaving [upcomingBills] answering --
+     * [unsupportedCheckRoutes] 404s both together, so this is the only way to prove a
+     * part-upgraded server that has *only* lost the budget route doesn't also flip bills
+     * unsupported, or (Overview's own [dev.otherworld.budget.data.repo.CheckRepository]
+     * consumer) the old-server aggregate that requires both.
+     */
+    var unsupportedBudgetOnly: Boolean = false,
 ) : BudgetApi {
 
     /** One entry per *distinct* transaction created -- a replay of a seen key adds nothing here. */
@@ -135,7 +143,7 @@ class FakeBudgetApi(
         budgetCalls++
         // Checked before respond(), like ocrAvailable above -- respond()'s recoverCatching would
         // otherwise flatten a thrown ServerError(404) into ServerError(0).
-        if (unsupportedCheckRoutes) return Result.failure(BudgetApiError.ServerError(404))
+        if (unsupportedCheckRoutes || unsupportedBudgetOnly) return Result.failure(BudgetApiError.ServerError(404))
         return respond { budgetResult }
     }
 

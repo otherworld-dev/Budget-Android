@@ -25,10 +25,6 @@
     <string name="nav_overview">Overview</string>
     <string name="nav_activity">Activity</string>
 
-    <!-- Placeholder until Overview replaces it with the real screen -->
-    <string name="overview_placeholder">Overview coming soon</string>
-    <string name="budget_placeholder">Budget coming soon</string>
-
     <!-- Transaction fields (shared by Review and Quick Add) -->
     <string name="field_account">Account</string>
     <string name="field_category">Category</string>
@@ -100,6 +96,29 @@
     <string name="activity_updated_just_now">Updated just now</string>
     <string name="activity_updated_minutes_ago">Updated %1$d min ago</string>
     <string name="activity_updated_hours_ago">Updated %1$d hr ago</string>
+
+    <!-- Overview -->
+    <string name="overview_title">Overview</string>
+    <string name="overview_balances_title">Balances</string>
+    <string name="overview_budget_title">Budget this month</string>
+    <string name="overview_bills_title">Bills due</string>
+    <string name="overview_budget_detail_title">Budget</string>
+    <string name="overview_accounts_other">Other</string>
+    <string name="overview_shared">Shared</string>
+    <string name="overview_budget_left">%1$s left of %2$s</string>
+    <string name="overview_budget_range">%1$s – %2$s</string>
+    <string name="overview_see_all">See all</string>
+    <string name="overview_budget_line">%1$s of %2$s</string>
+    <string name="overview_budget_over">%1$s over</string>
+    <string name="overview_due_overdue">Overdue</string>
+    <string name="overview_due_today">Today</string>
+    <string name="overview_due_tomorrow">Tomorrow</string>
+    <plurals name="overview_due_in_days">
+        <item quantity="one">In %d day</item>
+        <item quantity="other">In %d days</item>
+    </plurals>
+    <string name="overview_bills_empty">Nothing due in the next 14 days</string>
+    <string name="overview_update_server">Update Budget on your server to see balances, budget and bills here</string>
 
     <!-- Settings -->
     <string name="settings_account">Account</string>

@@ -26,6 +26,9 @@ class FakeStringResources : StringResources {
         R.string.onboarding_no_browser to "No browser is available to finish signing in.",
         R.string.onboarding_server_unreachable to
             "Couldn't reach that server. Check the address and try again.",
+        R.string.overview_accounts_other to "Other",
+        R.string.activity_error_offline to "Couldn't reach your Budget server.",
+        R.string.activity_error_generic to "Something went wrong loading your activity.",
     )
 
     override fun get(id: Int): String = values[id] ?: "string:$id"

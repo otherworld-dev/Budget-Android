@@ -1,7 +1,5 @@
 package dev.otherworld.budget.ui.activity
 
-import android.content.ActivityNotFoundException
-import android.content.Intent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -43,7 +41,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.net.toUri
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -51,6 +48,7 @@ import dev.otherworld.budget.R
 import dev.otherworld.budget.domain.model.Direction
 import dev.otherworld.budget.domain.model.RecentTransaction
 import dev.otherworld.budget.domain.model.SplitLine
+import dev.otherworld.budget.ui.common.openInBrowser
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 
@@ -87,17 +85,12 @@ fun ActivityScreen(
     LaunchedEffect(uiState.error) { errorDismissed = false }
 
     // Not every Android device has a browser (kiosk builds, stripped e-ink readers -- this app's
-    // own reference device is one), and an unguarded ACTION_VIEW there throws
-    // ActivityNotFoundException and takes the app down. Reported in the same banner a refresh
-    // failure uses rather than crashing or, worse, silently doing nothing.
+    // own reference device is one); openInBrowser (ui/common, shared with Overview since Task 9)
+    // guards that and reports failure here rather than crashing or, worse, silently doing nothing.
     var openFailed by remember { mutableStateOf(false) }
 
     fun openUrl(url: String) {
-        try {
-            context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
-        } catch (e: ActivityNotFoundException) {
-            openFailed = true
-        }
+        if (!context.openInBrowser(url)) openFailed = true
     }
 
     // Ids of rows currently showing their split parts. rememberSaveable needs a Bundle-native

@@ -1,18 +1,12 @@
 package dev.otherworld.budget.ui.nav
 
-import androidx.annotation.StringRes
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.consumeWindowInsets
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -21,10 +15,12 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import dev.otherworld.budget.R
 import dev.otherworld.budget.ui.activity.ActivityScreen
 import dev.otherworld.budget.ui.capture.CaptureScreen
 import dev.otherworld.budget.ui.onboarding.OnboardingScreen
+import dev.otherworld.budget.ui.overview.BudgetScreen
+import dev.otherworld.budget.ui.overview.OverviewScreen
+import dev.otherworld.budget.ui.overview.OverviewViewModel
 import dev.otherworld.budget.ui.quickadd.QuickAddScreen
 import dev.otherworld.budget.ui.review.ReviewScreen
 import dev.otherworld.budget.ui.settings.SettingsScreen
@@ -187,13 +183,27 @@ fun BudgetNavHost(
                 )
             }
 
-            // Placeholders only: Overview replaces this with the real screen, including the
-            // Settings icon in its own top bar -- not added here, since there is no real top bar
-            // yet to put it in. Routes.BUDGET is Overview's own detail push (see
-            // TOP_LEVEL_ROUTES's KDoc for why it isn't a fourth tab); Overview's own task wires
-            // the push, so for now it is unreachable but still needs to compile and hold a route.
-            composable(Routes.OVERVIEW) { PlaceholderScreen(R.string.overview_placeholder) }
-            composable(Routes.BUDGET) { PlaceholderScreen(R.string.budget_placeholder) }
+            composable(Routes.OVERVIEW) {
+                OverviewScreen(
+                    onOpenSettings = { nav.navigate(Routes.SETTINGS) { launchSingleTop = true } },
+                    onOpenBudgetDetail = { nav.navigate(Routes.BUDGET) { launchSingleTop = true } },
+                )
+            }
+
+            // Routes.BUDGET is Overview's own detail push (see TOP_LEVEL_ROUTES's KDoc for why
+            // it isn't a fourth tab), not a destination reachable any other way -- so it shares
+            // Overview's own OverviewViewModel rather than fetching the same data again. That
+            // instance is scoped to the Overview back-stack entry; getBackStackEntry throws if
+            // that entry isn't on the stack, which happens on a process-death restore straight
+            // into Routes.BUDGET (Android can recreate any single destination, not just the
+            // graph's start one) -- runCatching's null then falls back to a plain hiltViewModel(),
+            // scoped to this entry instead, rather than crashing the whole screen.
+            composable(Routes.BUDGET) {
+                val ownerEntry = runCatching { nav.getBackStackEntry(Routes.OVERVIEW) }.getOrNull()
+                val budgetViewModel: OverviewViewModel =
+                    if (ownerEntry != null) hiltViewModel(ownerEntry) else hiltViewModel()
+                BudgetScreen(onBack = { nav.popBackStack() }, viewModel = budgetViewModel)
+            }
 
             composable(Routes.SETTINGS) {
                 SettingsScreen(
@@ -244,10 +254,3 @@ private fun NavHostController.navigateToTab(route: String) {
     }
 }
 
-/** A centred placeholder for the routes Task 8/9 have not replaced with real screens yet. */
-@Composable
-private fun PlaceholderScreen(@StringRes textRes: Int) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(stringResource(textRes))
-    }
-}
