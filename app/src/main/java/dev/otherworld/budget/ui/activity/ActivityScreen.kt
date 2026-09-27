@@ -72,7 +72,8 @@ fun ActivityScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
-    LaunchedEffect(Unit) { viewModel.onVisible() }
+    // The resume effect also fires on first composition, so this one call covers both: a
+    // LaunchedEffect alongside it made every first visit refresh twice.
     LifecycleResumeEffect(Unit) {
         viewModel.onVisible()
         onPauseOrDispose { }

@@ -67,12 +67,10 @@ class OverviewViewModelTest {
         val groups = viewModel.uiState.value.balances.data!!
         // Order of first appearance among the accounts actually shown -- closed account 2 is
         // dropped before grouping, so its "savings" doesn't count as an earlier appearance than
-        // account 3's empty type: "checking" (account 1), then the empty-type group
-        // (account 3, labelled overview_accounts_other), then "savings" (account 4).
-        assertEquals(
-            listOf("checking", strings.get(R.string.overview_accounts_other), "savings"),
-            groups.map { it.type },
-        )
+        // account 3's empty type: "checking" (account 1), then the empty-type group (account 3),
+        // then "savings" (account 4). The raw server types -- the screen turns them into
+        // headings (see accountTypeLabelRes).
+        assertEquals(listOf("checking", "", "savings"), groups.map { it.type })
         assertEquals(listOf(1L), groups[0].accounts.map { it.id })
         assertEquals(listOf(3L), groups[1].accounts.map { it.id })
         assertEquals(listOf(4L), groups[2].accounts.map { it.id })

@@ -35,7 +35,11 @@ data class SectionUi<T>(
     val unsupported: Boolean = false,
 )
 
-/** [Account.type] in the order each type first appeared in the server's own list (closed accounts dropped). */
+/**
+ * [Account.type] in the order each type first appeared in the server's own list (closed accounts
+ * dropped). [type] is the server's raw value, blank for an untyped account; the screen words it
+ * (see [accountTypeLabelRes]).
+ */
 data class AccountGroup(val type: String, val accounts: List<Account>)
 
 /** One bill plus the due wording ([dueLabel]) it earns against the injected `today`. */
@@ -141,14 +145,13 @@ class OverviewViewModel @Inject constructor(
      * Closed accounts dropped, the rest grouped by [Account.type] in the order each type first
      * appears in the server's own list -- never re-sorted, since that order is itself meaningful
      * (spec §2.2). An empty type (an older server, or a genuinely untyped account) gets its own
-     * group labelled [R.string.overview_accounts_other] rather than a blank heading.
+     * group, keyed "" -- the heading is the screen's job, so every type is worded in one place.
      */
     private fun groupByType(accounts: List<Account>): List<AccountGroup> {
         val groups = LinkedHashMap<String, MutableList<Account>>()
         for (account in accounts) {
             if (account.closed) continue
-            val label = account.type.ifBlank { strings.get(R.string.overview_accounts_other) }
-            groups.getOrPut(label) { mutableListOf() }.add(account)
+            groups.getOrPut(account.type.trim()) { mutableListOf() }.add(account)
         }
         return groups.map { (type, accounts) -> AccountGroup(type, accounts) }
     }

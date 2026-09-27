@@ -31,13 +31,13 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -76,7 +76,8 @@ fun OverviewScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
-    LaunchedEffect(Unit) { viewModel.onVisible() }
+    // The resume effect also fires on first composition, so this one call covers both: a
+    // LaunchedEffect alongside it made every first visit refresh twice.
     LifecycleResumeEffect(Unit) {
         viewModel.onVisible()
         onPauseOrDispose { }
@@ -166,7 +167,7 @@ private fun BalancesSection(section: SectionUi<List<AccountGroup>>, onOpen: () -
         Column {
             groups.forEach { group ->
                 Text(
-                    group.type,
+                    accountTypeLabelRes(group.type)?.let { stringResource(it) } ?: humaniseAccountType(group.type),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
@@ -221,9 +222,17 @@ private fun BudgetSection(
     SectionHeader(stringResource(R.string.overview_budget_title), onOpen)
     SectionBody(section, onRetry) { budget ->
         Column {
+            // Overspent reads the way the category rows do ("£31.20 over", in the error colour),
+            // not "-£31.20 left of £1,450.00" in the normal one.
+            val overspent = budget.remaining.amount.signum() < 0
             Text(
-                stringResource(R.string.overview_budget_left, budget.remaining.format(), budget.budgeted.format()),
+                if (overspent) {
+                    stringResource(R.string.overview_budget_over, budget.remaining.abs().format())
+                } else {
+                    stringResource(R.string.overview_budget_left, budget.remaining.format(), budget.budgeted.format())
+                },
                 style = MaterialTheme.typography.titleMedium,
+                color = if (overspent) MaterialTheme.colorScheme.error else Color.Unspecified,
             )
             LinearProgressIndicator(
                 progress = { progressFraction(budget.spent, budget.budgeted) },

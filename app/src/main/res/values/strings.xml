@@ -104,6 +104,17 @@
     <string name="overview_bills_title">Bills due</string>
     <string name="overview_budget_detail_title">Budget</string>
     <string name="overview_accounts_other">Other</string>
+    <!-- Balances group headings, one per account type the Budget server defines. -->
+    <string name="account_type_checking">Checking</string>
+    <string name="account_type_savings">Savings</string>
+    <string name="account_type_credit_card">Credit card</string>
+    <string name="account_type_investment">Investment</string>
+    <string name="account_type_loan">Loan</string>
+    <string name="account_type_cash">Cash</string>
+    <string name="account_type_money_market">Money market</string>
+    <string name="account_type_cryptocurrency">Cryptocurrency</string>
+    <string name="account_type_mortgage">Mortgage</string>
+    <string name="account_type_line_of_credit">Line of credit</string>
     <string name="overview_shared">Shared</string>
     <string name="overview_budget_left">%1$s left of %2$s</string>
     <string name="overview_budget_range">%1$s – %2$s</string>

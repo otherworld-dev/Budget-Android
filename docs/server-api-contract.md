@@ -333,12 +333,14 @@ non-numeric value falls back to the default rather than a 500. Response:
 The list is sorted overdue first, then by `next_due_date`, and includes shared bills alongside
 the caller's own.
 
-**Extended existing shapes.** `accounts`, `transactions/recent` and the single-transaction record
-all gain keys, every one absent — not sent as `null` — on an older server:
+**Extended existing shapes.** `transactions/recent` and the single-transaction record gain keys,
+every one absent — not sent as `null` — on an older server. `accounts` gains nothing; the app
+simply reads more of what it already sends:
 
-- `accounts` gains `type`, `balance`, `balance_in_base_currency`, `base_currency`, `closed` and
-  `shared`. A shared account's `balance` now runs through the same today-adjustment and currency
-  conversion as an owned one, so the two mean the same thing either way.
+- `accounts`: current servers already send `type`, `balance`, `balance_in_base_currency`,
+  `base_currency`, `closed` and `shared`, and the app now reads them for Overview's balances. A
+  shared account's `balance` runs through the same today-adjustment and currency conversion as an
+  owned one, so the two mean the same thing either way.
 - `transactions/recent` gains `account_id`, `type` (`"debit"` or `"credit"`; amounts themselves
   stay positive, as everywhere in this contract), `category_name`, `is_split`, `splits`,
   `linked_transaction_id` and `linked_account_name`. `is_split` is currently unread by the app
@@ -360,8 +362,10 @@ It exists for completeness of the contract — the app reads splits from the lis
 has and never calls this route itself.
 
 **Old and part-upgraded servers.** A 404 or 501 from `budget/status` or `bills/upcoming` — a
-server that answers `check_available: true` but hasn't actually shipped the route yet — is treated
-exactly like the capability being absent, for that section only: the Overview tab shows the
-Budget or Bills section as unsupported while the other sections carry on unaffected. Balances and
+server that answers `check_available: true` but hasn't actually shipped the route yet — marks
+that section unsupported. When only one of the two does, it is per-section: the Overview tab shows
+the Budget or Bills section as unsupported while the other sections carry on unaffected. When
+both do, Overview switches to the same whole-screen "Update Budget on your server" state as an
+absent `check_available`. Balances and
 Activity aren't gated this way: `accounts` and `transactions/recent` are existing routes that
 simply grew keys, so a 404 or 501 there is a genuine server error, not an old-server signal.

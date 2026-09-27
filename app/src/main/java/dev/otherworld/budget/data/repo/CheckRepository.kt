@@ -62,7 +62,10 @@ class CheckRepository @Inject constructor(
     /** Keeps two refreshes from fetching the same kinds at once; the loser then finds them fresh. */
     private val refreshLock = Mutex()
 
-    /** Loads cached sections (once per process), then refetches kinds older than STALE_AFTER (all when force). */
+    /**
+     * Loads cached sections (once per generation -- that is, once per session: [reset] starts a
+     * new one), then refetches kinds older than STALE_AFTER (all when force).
+     */
     suspend fun refresh(force: Boolean = false) {
         val gen = synchronized(stateLock) { generation }
         // Captured with the generation, for the same reason: the snapshot a fetch writes belongs

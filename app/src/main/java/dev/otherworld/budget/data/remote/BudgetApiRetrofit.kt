@@ -144,10 +144,17 @@ class BudgetApiRetrofit @Inject constructor(
     override suspend fun upcomingBills(days: Int) =
         call({ service.upcomingBills(days) }) { dto -> dto.bills.mapNotNull { it.toDomain() } }
 
+    /**
+     * Known limitation: every amount is labelled in the server's *base* currency, not the
+     * transaction's own. SplitDto carries no currency (spec §1.1's split shape) and this call is
+     * given only the transaction id, not its currency, so a split on an account in another
+     * currency comes back with the right numbers under the wrong code. Nothing in
+     * the app calls this today -- Activity reads the splits embedded in the transactions list,
+     * which carry the transaction's currency -- so fix the labelling before anything does.
+     */
     override suspend fun transactionSplits(id: Long) = call({ service.transactionSplits(id) }) { dto ->
-        // SplitDto carries no currency of its own (spec §1.1's split shape), so it resolves the
-        // same way extract() does: the cached fallback first, one capabilities() round trip only
-        // if nothing has populated it yet this session.
+        // The base currency resolves the same way extract() does: the cached fallback first, one
+        // capabilities() round trip only if nothing has populated it yet this session.
         val currency = fallbackCurrency.value ?: capabilities().getOrElse { throw it }.currency
         dto.splits.mapNotNull { it.toDomain(currency) }
     }
