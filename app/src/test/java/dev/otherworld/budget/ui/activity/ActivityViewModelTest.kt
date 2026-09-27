@@ -81,6 +81,22 @@ class ActivityViewModelTest {
     }
 
     @Test
+    fun `the deep link follows a server change made after the ViewModel was built`() = runTest(dispatcher) {
+        // Tab back stacks are saved across sign-out, so this ViewModel can come back via
+        // restoreState after the user has signed in to a different server: a server resolved once
+        // at construction would open the old server's web pages.
+        val credentials = store()
+        val viewModel = vm(credentials)
+
+        credentials.save(Credentials("https://other.example.org", "bob", "pw"))
+
+        assertEquals(
+            "https://other.example.org/apps/budget/#transactions?id=9001",
+            viewModel.webUrlFor(9001),
+        )
+    }
+
+    @Test
     fun `returns no URL when signed out`() = runTest(dispatcher) {
         val viewModel = vm(InMemoryCredentialStore())
         viewModel.onVisible(); advanceUntilIdle()

@@ -79,6 +79,20 @@ class OverviewViewModelTest {
     }
 
     @Test
+    fun `web links follow a server change made after the ViewModel was built`() = runTest(dispatcher) {
+        // Same reason as ActivityViewModelTest's: a restored tab back stack can outlive a sign-in
+        // to a different server, so the server must be read at tap time.
+        val credentials = store()
+        val viewModel = vm(credentials)
+
+        credentials.save(Credentials("https://other.example.org", "bob", "pw"))
+
+        assertEquals("https://other.example.org/apps/budget/#accounts", viewModel.accountsUrl())
+        assertEquals("https://other.example.org/apps/budget/#budget", viewModel.budgetUrl())
+        assertEquals("https://other.example.org/apps/budget/#bills", viewModel.billsUrl())
+    }
+
+    @Test
     fun `atRisk puts Groceries (overspent) first`() = runTest(dispatcher) {
         val viewModel = vm()
         viewModel.onVisible(); advanceUntilIdle()

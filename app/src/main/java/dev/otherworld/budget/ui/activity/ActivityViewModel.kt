@@ -35,12 +35,6 @@ class ActivityViewModel @Inject constructor(
     private val now: () -> Instant,
 ) : ViewModel() {
 
-    /**
-     * Resolved once -- the server cannot change while this ViewModel is alive; signing out
-     * navigates away and destroys it.
-     */
-    private val serverUrl: String? = credentials.load()?.server
-
     private val _uiState = MutableStateFlow(toUiState(check.recent.value))
     val uiState: StateFlow<ActivityUiState> = _uiState.asStateFlow()
 
@@ -66,7 +60,13 @@ class ActivityViewModel @Inject constructor(
         viewModelScope.launch { check.refresh(force = true) }
     }
 
-    fun webUrlFor(id: Long): String? = serverUrl?.let { WebLinks.transaction(it, id) }
+    /**
+     * Reads the server at tap time, not once at construction: a tab's back stack is saved when
+     * the user switches away, and restoring it can hand back this same ViewModel after a sign-out
+     * and a sign-in to a different server. The nav host now drops those saved stacks on sign-out
+     * and expiry, but a link must never open the wrong server's pages if one survives.
+     */
+    fun webUrlFor(id: Long): String? = credentials.load()?.server?.let { WebLinks.transaction(it, id) }
 
     /**
      * [check.recent] only emits when [CheckRepository] itself changes the section, which a

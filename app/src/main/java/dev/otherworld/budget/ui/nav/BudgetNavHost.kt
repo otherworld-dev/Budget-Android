@@ -211,7 +211,7 @@ fun BudgetNavHost(
                     onSignedOut = {
                         // Clears the whole back stack, not just up to Settings: after sign-out,
                         // pressing Back must never return into an authenticated screen.
-                        nav.navigate(Routes.ONBOARDING) { popUpTo(0) { inclusive = true } }
+                        nav.navigateToOnboardingSignedOut()
                     },
                 )
             }
@@ -254,3 +254,17 @@ private fun NavHostController.navigateToTab(route: String) {
     }
 }
 
+/**
+ * Where sign-out and credential expiry both send the user: Onboarding, alone on the back stack.
+ *
+ * `popUpTo(0)` clears the visible stack, but not the tab stacks [navigateToTab] put aside with
+ * `saveState`. Those keep their entries -- and so their ViewModels -- for a later `restoreState`,
+ * which would otherwise hand the next session the previous one's Overview or Activity: the right
+ * shape of screen, still pointing at the old account's data and the old server's web pages. So
+ * both saved stacks are dropped here too, by the same route [navigateToTab] saved them under.
+ */
+internal fun NavHostController.navigateToOnboardingSignedOut() {
+    navigate(Routes.ONBOARDING) { popUpTo(0) { inclusive = true } }
+    clearBackStack(Routes.OVERVIEW)
+    clearBackStack(Routes.ACTIVITY)
+}

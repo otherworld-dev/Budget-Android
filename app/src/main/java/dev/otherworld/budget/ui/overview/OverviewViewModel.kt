@@ -66,9 +66,6 @@ class OverviewViewModel @Inject constructor(
     private val today: () -> LocalDate,
 ) : ViewModel() {
 
-    /** Resolved once -- same reasoning as [dev.otherworld.budget.ui.activity.ActivityViewModel]. */
-    private val serverUrl: String? = credentials.load()?.server
-
     private val _uiState = MutableStateFlow(
         buildState(check.balances.value, check.budget.value, check.bills.value),
     )
@@ -97,9 +94,10 @@ class OverviewViewModel @Inject constructor(
         viewModelScope.launch { check.refresh(force = true) }
     }
 
-    fun accountsUrl(): String? = serverUrl?.let { WebLinks.accounts(it) }
-    fun budgetUrl(): String? = serverUrl?.let { WebLinks.budget(it) }
-    fun billsUrl(): String? = serverUrl?.let { WebLinks.bills(it) }
+    // The server is read at tap time -- same reasoning as ActivityViewModel.webUrlFor.
+    fun accountsUrl(): String? = credentials.load()?.server?.let { WebLinks.accounts(it) }
+    fun budgetUrl(): String? = credentials.load()?.server?.let { WebLinks.budget(it) }
+    fun billsUrl(): String? = credentials.load()?.server?.let { WebLinks.bills(it) }
 
     /** Same reasoning as [dev.otherworld.budget.ui.activity.ActivityViewModel.recomputeStaleness]. */
     private fun recomputeStaleness() {
