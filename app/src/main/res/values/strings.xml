@@ -65,6 +65,10 @@
     <string name="review_items_heading">Items on receipt</string>
     <string name="review_split_by_item">Split by item</string>
     <string name="review_not_categorised">Not categorised</string>
+    <string name="review_item_name">Item</string>
+    <string name="review_item_amount">Amount</string>
+    <string name="review_remove_item">Remove item</string>
+    <string name="review_add_item">Add item</string>
 
     <!-- Quick Add -->
     <string name="quickadd_title">Add transaction</string>

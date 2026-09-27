@@ -147,7 +147,7 @@ class ReviewViewModelTest {
         assertEquals("2026-03-12", state.dateText)
         assertEquals("24.31", state.totalText)
         assertEquals(14L, state.selectedCategoryId)
-        assertEquals(1, state.lineItems.size)
+        assertEquals(1, state.editableItems.size)
     }
 
     @Test
@@ -289,6 +289,74 @@ class ReviewViewModelTest {
             "Can't split this by item — the items don't add up to the total.",
             vm.uiState.value.splitBlockedNote,
         )
+    }
+
+    @Test
+    fun `correcting a misread item amount so the items reconcile makes the receipt splittable`() =
+        runTest(dispatcher) {
+            // The reported bug: OCR pulled the wrong per-item cost, so the items no longer sum to
+            // the total and the split disappears. discountDraftQueue is exactly that shape --
+            // 3.40 + 18.95 + tax 1.42 = 23.77, but the total is 20.00.
+            val (vm, _) = viewModel(queue = discountDraftQueue()); advanceUntilIdle()
+            assertFalse(vm.uiState.value.splittable)
+
+            // Correct "Cheese" 18.95 -> 15.18, so 3.40 + 15.18 + 1.42 = 20.00 = total.
+            vm.onItemAmountChanged(1, "15.18")
+
+            assertTrue(vm.uiState.value.splittable)
+            assertEquals("15.18", vm.uiState.value.editableItems[1].amountText)
+            assertEquals(3, vm.uiState.value.splitRows.size)   // 2 items + tax
+        }
+
+    @Test
+    fun `adding a missing item can make the receipt splittable`() = runTest(dispatcher) {
+        // Default draft: total 24.31, a single item "Milk 2L" 1.20 -- one item can never split.
+        val (vm, _) = viewModel(); advanceUntilIdle()
+        assertFalse(vm.uiState.value.splittable)
+
+        vm.onItemAdded()
+        vm.onItemDescriptionChanged(1, "Bread")
+        vm.onItemAmountChanged(1, "23.11")   // 1.20 + 23.11 = 24.31 = total
+
+        assertEquals(2, vm.uiState.value.editableItems.size)
+        assertTrue(vm.uiState.value.splittable)
+    }
+
+    @Test
+    fun `removing a phantom item can make the receipt splittable`() = runTest(dispatcher) {
+        // Three items summing to 27.35 against a 22.35 total: OCR invented a line.
+        val queue = FakeReviewQueue(
+            PendingReceipt(
+                1, "/tmp/r.jpg", 0, CaptureState.AWAITING_REVIEW,
+                DraftTransaction(
+                    merchant = "Tesco", date = LocalDate.of(2026, 3, 12),
+                    total = Money(BigDecimal("22.35"), "GBP"), suggestedCategoryId = 14,
+                    lineItems = listOf(
+                        LineItem("Coffee beans", Money(BigDecimal("3.40"), "GBP")),
+                        LineItem("Cheese", Money(BigDecimal("18.95"), "GBP")),
+                        LineItem("Phantom", Money(BigDecimal("5.00"), "GBP")),
+                    ),
+                ),
+                0, null,
+            )
+        )
+        val (vm, _) = viewModel(queue = queue); advanceUntilIdle()
+        assertFalse(vm.uiState.value.splittable)
+
+        vm.onItemRemoved(2)   // drop the phantom -> 3.40 + 18.95 = 22.35 = total
+
+        assertEquals(2, vm.uiState.value.editableItems.size)
+        assertTrue(vm.uiState.value.splittable)
+    }
+
+    @Test
+    fun `blanking an item amount makes it non-splittable rather than crashing`() = runTest(dispatcher) {
+        val (vm, _) = viewModel(queue = splitDraftQueue()); advanceUntilIdle()
+        assertTrue(vm.uiState.value.splittable)
+
+        vm.onItemAmountChanged(0, "")
+
+        assertFalse(vm.uiState.value.splittable)
     }
 
     @Test
