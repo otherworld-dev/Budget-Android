@@ -1,8 +1,11 @@
 package dev.otherworld.budget.data.repo
 
+import android.database.sqlite.SQLiteFullException
 import dev.otherworld.budget.RobolectricTestApplication
 import dev.otherworld.budget.data.auth.Credentials
 import dev.otherworld.budget.data.auth.InMemoryCredentialStore
+import dev.otherworld.budget.data.local.SnapshotDao
+import dev.otherworld.budget.data.local.SnapshotEntity
 import dev.otherworld.budget.data.local.SnapshotKind
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -92,5 +95,22 @@ class SnapshotStoreTest {
         assertNull(subject.read(SnapshotKind.ACCOUNTS) { it })
         credentialStore.save(alice)
         assertNull(subject.read(SnapshotKind.ACCOUNTS) { it })
+    }
+
+    @Test
+    fun `a failing database reads as nothing and never throws`() = runTest {
+        // A full disk (SQLiteFullException) must cost the cache, not crash whichever screen's
+        // refresh happened to touch it -- Capture refreshes on every resume.
+        val subject = SnapshotStore(ThrowingSnapshotDao(), credentialStore, now = { clockValue })
+
+        subject.write(SnapshotKind.ACCOUNTS, """{"value":"hi"}""", subject.currentOwner())
+        assertNull(subject.read(SnapshotKind.ACCOUNTS) { it })
+        subject.clear()
+    }
+
+    private class ThrowingSnapshotDao : SnapshotDao {
+        override suspend fun get(kind: String): SnapshotEntity? = throw SQLiteFullException("disk full")
+        override suspend fun put(entity: SnapshotEntity) = throw SQLiteFullException("disk full")
+        override suspend fun clear() = throw SQLiteFullException("disk full")
     }
 }

@@ -1,9 +1,11 @@
 package dev.otherworld.budget.data.repo
 
+import android.util.Log
 import dev.otherworld.budget.data.auth.CredentialStore
 import dev.otherworld.budget.data.local.SnapshotDao
 import dev.otherworld.budget.data.local.SnapshotEntity
 import dev.otherworld.budget.data.local.SnapshotKind
+import kotlinx.coroutines.CancellationException
 import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -22,6 +24,11 @@ data class Cached<T>(val value: T, val fetchedAt: Instant)
  * under the new one. [write] drops the row when that owner is no longer the signed-in one, and
  * [read] compares the stored owner against the current one and returns null on any mismatch,
  * rather than trusting whatever is on disk.
+ *
+ * Best-effort throughout: this is a cache, and a Room failure (a full disk's
+ * `SQLiteFullException`, say) must cost the cached copy, not crash the screen whose refresh
+ * touched it -- Capture refreshes on every resume, so a throwing read there is a crash loop.
+ * [read] answers null and [write]/[clear] do nothing; cancellation still propagates.
  */
 @Singleton
 class SnapshotStore @Inject constructor(
@@ -35,13 +42,13 @@ class SnapshotStore @Inject constructor(
      */
     fun currentOwner(): String? = credentials.load()?.let { "${it.server}|${it.loginName}" }
 
-    /** Null when absent, malformed, or written by a different server/user than the one signed in now. */
-    suspend fun <T> read(kind: SnapshotKind, decode: (String) -> T?): Cached<T>? {
-        val owner = currentOwner() ?: return null
-        val row = dao.get(kind.name) ?: return null
-        if (row.owner != owner) return null
-        val value = decode(row.json) ?: return null
-        return Cached(value, Instant.ofEpochMilli(row.fetchedAt))
+    /** Null when absent, malformed, unreadable, or written by a different server/user than the one signed in now. */
+    suspend fun <T> read(kind: SnapshotKind, decode: (String) -> T?): Cached<T>? = bestEffort(null) {
+        val owner = currentOwner() ?: return@bestEffort null
+        val row = dao.get(kind.name) ?: return@bestEffort null
+        if (row.owner != owner) return@bestEffort null
+        val value = decode(row.json) ?: return@bestEffort null
+        Cached(value, Instant.ofEpochMilli(row.fetchedAt))
     }
 
     /**
@@ -49,10 +56,27 @@ class SnapshotStore @Inject constructor(
      * began. Ignored when [owner] is null (nobody was signed in) or is no longer the signed-in
      * one (the session ended while the fetch was in flight).
      */
-    suspend fun write(kind: SnapshotKind, json: String, owner: String?) {
-        if (owner == null || currentOwner() != owner) return
+    suspend fun write(kind: SnapshotKind, json: String, owner: String?) = bestEffort(Unit) {
+        if (owner == null || currentOwner() != owner) return@bestEffort
         dao.put(SnapshotEntity(kind = kind.name, owner = owner, json = json, fetchedAt = now().toEpochMilli()))
     }
 
-    suspend fun clear() = dao.clear()
+    /**
+     * Best-effort like the rest. A clear that fails leaves rows behind, but they stay owner-tagged,
+     * so the next session still cannot read another owner's.
+     */
+    suspend fun clear() = bestEffort(Unit) { dao.clear() }
+
+    private inline fun <R> bestEffort(fallback: R, block: () -> R): R = try {
+        block()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(TAG, "snapshot I/O failed; carrying on without the cache", e)
+        fallback
+    }
+
+    private companion object {
+        const val TAG = "SnapshotStore"
+    }
 }
