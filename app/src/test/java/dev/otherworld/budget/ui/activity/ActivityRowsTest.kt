@@ -88,4 +88,20 @@ class ActivityRowsTest {
         val rows = buildActivityRows(listOf(a, b, c))
         assertEquals(listOf(ActivityRow.Single(a), ActivityRow.Single(b), ActivityRow.Single(c)), rows)
     }
+
+    @Test fun `a transfer linked to itself stays a single row`() {
+        val selfLinked = tx(1, Direction.DEBIT, TransferLink(1, "Somewhere else"))
+        val rows = buildActivityRows(listOf(selfLinked))
+        assertEquals(listOf(ActivityRow.Single(selfLinked)), rows)
+    }
+
+    @Test fun `a duplicated id is emitted once`() {
+        // Two rows share id 1 but differ in content, so the assertion actually proves which one
+        // survives (the first), rather than merely that some row with id 1 remains.
+        val first = tx(1).copy(merchant = "First")
+        val duplicate = tx(1).copy(merchant = "Second")
+        val other = tx(2)
+        val rows = buildActivityRows(listOf(first, duplicate, other))
+        assertEquals(listOf(ActivityRow.Single(first), ActivityRow.Single(other)), rows)
+    }
 }

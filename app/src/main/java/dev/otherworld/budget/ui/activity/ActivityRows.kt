@@ -40,7 +40,14 @@ sealed interface ActivityRow {
  *
  * A transfer whose linked id isn't in [transactions] at all -- the partner is on another page,
  * or belongs to an account the caller can't see -- stays a plain [ActivityRow.Single]; the
- * screen reads its own [dev.otherworld.budget.domain.model.TransferLink] to label it (Task 8).
+ * screen reads its own [dev.otherworld.budget.domain.model.TransferLink] to label it (Task 8). A
+ * transfer that links to *itself* (`linkedTransactionId == tx.id`) is treated the same way --
+ * never as a pair with itself -- since a row can't be its own other half.
+ *
+ * Every id in [transactions] is emitted at most once, even if it appears more than once in the
+ * input: the first occurrence wins and a later duplicate is dropped silently. This keeps
+ * [ActivityRow.key] unique across the returned list, which the Activity screen's `LazyColumn`
+ * relies on (Task 8) -- Compose's keyed `items` throws if two rows share a key.
  */
 fun buildActivityRows(transactions: List<RecentTransaction>): List<ActivityRow> {
     val byId = transactions.associateBy { it.id }
@@ -56,17 +63,21 @@ fun buildActivityRows(transactions: List<RecentTransaction>): List<ActivityRow> 
     val rows = mutableListOf<ActivityRow>()
 
     for (tx in transactions) {
-        if (tx.id in consumed) continue
+        if (tx.id in consumed) continue     // already paired away, or a later duplicate of an id already emitted
 
         val partnerId = tx.transfer?.linkedTransactionId ?: pointedAtBy[tx.id]
-        val partner = partnerId?.let { byId[it] }?.takeIf { it.id !in consumed }
+        val partner = partnerId
+            ?.takeIf { it != tx.id }                       // a transfer can never pair with itself
+            ?.let { byId[it] }
+            ?.takeIf { it.id !in consumed }
+
+        consumed += tx.id                                  // claims this id -- first occurrence wins either way
 
         if (partner == null) {
             rows += ActivityRow.Single(tx)
             continue
         }
 
-        consumed += tx.id
         consumed += partner.id
         val (from, to) = when {
             tx.direction == Direction.DEBIT -> tx to partner
