@@ -18,7 +18,6 @@
     <string name="common_close">Close</string>
     <string name="common_ok">OK</string>
     <string name="common_try_again">Try again</string>
-    <string name="recent_title">Recent</string>
     <string name="settings_title">Settings</string>
 
     <!-- Bottom bar (Task 7) -->
@@ -26,9 +25,8 @@
     <string name="nav_overview">Overview</string>
     <string name="nav_activity">Activity</string>
 
-    <!-- Placeholders until Tasks 8/9 replace them with the real screens -->
+    <!-- Placeholder until Overview replaces it with the real screen -->
     <string name="overview_placeholder">Overview coming soon</string>
-    <string name="activity_placeholder">Activity coming soon</string>
     <string name="budget_placeholder">Budget coming soon</string>
 
     <!-- Transaction fields (shared by Review and Quick Add) -->
@@ -87,11 +85,21 @@
     <string name="quickadd_saving">Saving…</string>
     <string name="quickadd_done">Done</string>
 
-    <!-- Recent -->
-    <string name="recent_no_opener">No app on this device can open that link.</string>
-    <string name="recent_row_subtitle">%1$s · %2$s</string>
-    <string name="recent_empty">Nothing saved yet. Capture a receipt to get started.</string>
-    <string name="recent_dismiss">Dismiss</string>
+    <!-- Activity (grown from Recent) -->
+    <string name="activity_title">Activity</string>
+    <string name="activity_no_opener">No app on this device can open that link.</string>
+    <string name="activity_row_subtitle">%1$s · %2$s</string>
+    <string name="activity_empty">Nothing saved yet. Capture a receipt to get started.</string>
+    <string name="activity_dismiss">Dismiss</string>
+    <string name="activity_uncategorised">Uncategorised</string>
+    <string name="activity_split_chip">Split</string>
+    <string name="activity_transfer_to">Transfer to %1$s</string>
+    <string name="activity_transfer_from">Transfer from %1$s</string>
+    <string name="activity_transfer">Transfer</string>
+    <string name="activity_transfer_pair">%1$s → %2$s</string>
+    <string name="activity_updated_just_now">Updated just now</string>
+    <string name="activity_updated_minutes_ago">Updated %1$d min ago</string>
+    <string name="activity_updated_hours_ago">Updated %1$d hr ago</string>
 
     <!-- Settings -->
     <string name="settings_account">Account</string>
@@ -148,4 +156,6 @@
     <string name="review_split_saved_error">Saved, but couldn\'t split it by item.</string>
     <string name="onboarding_no_browser">No browser is available to finish signing in.</string>
     <string name="onboarding_server_unreachable">Couldn\'t reach that server. Check the address and try again.</string>
+    <string name="activity_error_offline">Couldn\'t reach your Budget server.</string>
+    <string name="activity_error_generic">Something went wrong loading your activity.</string>
 </resources>

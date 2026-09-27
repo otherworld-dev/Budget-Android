@@ -22,6 +22,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import dev.otherworld.budget.R
+import dev.otherworld.budget.ui.activity.ActivityScreen
 import dev.otherworld.budget.ui.capture.CaptureScreen
 import dev.otherworld.budget.ui.onboarding.OnboardingScreen
 import dev.otherworld.budget.ui.quickadd.QuickAddScreen
@@ -180,14 +181,18 @@ fun BudgetNavHost(
                 )
             }
 
-            // Placeholders only: Task 8 (Overview) and Task 9 (Activity) replace these with the
-            // real screens, including the Settings icon in their own top bars -- not added here,
-            // since there is no real top bar yet to put it in. Routes.BUDGET is Overview's own
-            // detail push (see TOP_LEVEL_ROUTES's KDoc for why it isn't a fourth tab); Task 8
-            // wires the push, so for now it is unreachable but still needs to compile and hold a
-            // route.
+            composable(Routes.ACTIVITY) {
+                ActivityScreen(
+                    onOpenSettings = { nav.navigate(Routes.SETTINGS) { launchSingleTop = true } },
+                )
+            }
+
+            // Placeholders only: Overview replaces this with the real screen, including the
+            // Settings icon in its own top bar -- not added here, since there is no real top bar
+            // yet to put it in. Routes.BUDGET is Overview's own detail push (see
+            // TOP_LEVEL_ROUTES's KDoc for why it isn't a fourth tab); Overview's own task wires
+            // the push, so for now it is unreachable but still needs to compile and hold a route.
             composable(Routes.OVERVIEW) { PlaceholderScreen(R.string.overview_placeholder) }
-            composable(Routes.ACTIVITY) { PlaceholderScreen(R.string.activity_placeholder) }
             composable(Routes.BUDGET) { PlaceholderScreen(R.string.budget_placeholder) }
 
             composable(Routes.SETTINGS) {
