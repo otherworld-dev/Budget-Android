@@ -1,7 +1,7 @@
-# Claude Code
+# Claude
 .claude/
 CLAUDE.md
-.claudeignore
+.mcp.json
 
 # Gradle
 .gradle/
@@ -38,5 +38,6 @@ keystore.properties
 # Logs
 *.log
 
-# Subagent-driven development scratch (ledger, briefs, review packages)
+# Private process docs, never committed
 .superpowers/
+docs/superpowers/
