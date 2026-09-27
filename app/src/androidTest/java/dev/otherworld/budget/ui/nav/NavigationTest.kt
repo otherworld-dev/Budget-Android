@@ -2,6 +2,7 @@ package dev.otherworld.budget.ui.nav
 
 import android.Manifest
 import android.content.Intent
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -104,8 +105,10 @@ class NavigationTest {
 
     /**
      * Quick Add's only entry point. The constraint it encodes is as much what is *not* here as
-     * what is: no bottom bar and no drawer were added for it, so if this action ever leaves the
-     * Capture top bar the screen becomes unreachable, and nothing else in the suite would notice.
+     * what is: Quick Add isn't one of the bottom bar's three tabs (Task 7's
+     * [dev.otherworld.budget.ui.nav.TOP_LEVEL_ROUTES] is Capture/Overview/Activity only) and gets
+     * no drawer either, so if this action ever leaves the Capture top bar the screen becomes
+     * unreachable, and nothing else in the suite would notice.
      */
     @Test
     fun theCaptureTopBarReachesQuickAddAndComesBack() {
@@ -125,6 +128,50 @@ class NavigationTest {
             composeRule.onNodeWithText("Cancel").performClick()
             composeRule.waitForIdle()
             composeRule.onNodeWithText("Budget Companion").assertIsDisplayed()
+        }
+    }
+
+    /**
+     * Replaces the old "Recent button" coverage this suite had before Task 7: Recent's top-bar
+     * entry point on Capture is gone, and the Activity tab in [dev.otherworld.budget.ui.nav.BudgetBottomBar]
+     * is how the same destination is reached now. Task 9 swaps the placeholder text this test
+     * looks for the real Activity screen; the tab tap itself does not change.
+     */
+    @Test
+    fun tappingTheActivityTabNavigatesToActivity() {
+        credentialStore.save(Credentials("http://127.0.0.1:1", "tester", "app-password"))
+
+        ActivityScenario.launch(MainActivity::class.java).use {
+            composeRule.onNodeWithText("Budget Companion").assertIsDisplayed()
+
+            composeRule.onNodeWithText("Activity").performClick()
+            composeRule.waitForIdle()
+            composeRule.onNodeWithText("Activity coming soon").assertIsDisplayed()
+
+            // Activity is one of the three tabs (Task 7's TOP_LEVEL_ROUTES), so the bar itself
+            // stays on screen -- unlike Settings or Quick Add, which replace it entirely.
+            composeRule.onNodeWithText("Capture").assertIsDisplayed()
+            composeRule.onNodeWithText("Overview").assertIsDisplayed()
+        }
+    }
+
+    /**
+     * Settings is reached by pushing on top of a tab, not by tapping one, and it is not itself in
+     * [dev.otherworld.budget.ui.nav.TOP_LEVEL_ROUTES] -- so unlike the Activity tab above, landing
+     * there should make the bottom bar disappear rather than just change which item is selected.
+     */
+    @Test
+    fun bottomBarIsHiddenOnSettings() {
+        credentialStore.save(Credentials("http://127.0.0.1:1", "tester", "app-password"))
+
+        ActivityScenario.launch(MainActivity::class.java).use {
+            composeRule.onNodeWithText("Overview").assertIsDisplayed()
+
+            composeRule.onNodeWithText("Settings").performClick()
+            composeRule.waitForIdle()
+
+            composeRule.onAllNodesWithText("Overview").assertCountEquals(0)
+            composeRule.onAllNodesWithText("Activity").assertCountEquals(0)
         }
     }
 

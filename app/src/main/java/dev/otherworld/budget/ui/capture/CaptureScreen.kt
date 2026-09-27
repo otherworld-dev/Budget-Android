@@ -80,9 +80,11 @@ import kotlinx.coroutines.launch
  * [CaptureUiState.ocrAvailable] is false -- the photo still reaches Review, where the amount
  * can be typed by hand, so disabling the shutter would waste it.
  *
- * [onOpenQuickAdd], [onOpenRecent] and [onOpenSettings] are this screen's only way in and out of
- * Quick Add, Recent and Settings -- there is no bottom navigation bar or drawer (see Task 16's
- * constraints), so the top bar carries all three.
+ * [onOpenQuickAdd] and [onOpenSettings] are this screen's own way in and out of Quick Add and
+ * Settings; neither is a tab (see [dev.otherworld.budget.ui.nav.TOP_LEVEL_ROUTES]), so both stay
+ * on this top bar rather than moving to the bottom bar Task 7 added. Recent's old top-bar entry
+ * point is gone -- reaching it (as the Activity tab, once Task 9 lands) is the bottom bar's job
+ * now, not this screen's.
  *
  * [onOpenReview] is Capture's own reliable route into Review, via [AwaitingReviewBanner] below:
  * capture itself never navigates there synchronously (extraction is asynchronous, so there is no
@@ -97,7 +99,6 @@ import kotlinx.coroutines.launch
 @Composable
 fun CaptureScreen(
     onOpenQuickAdd: () -> Unit,
-    onOpenRecent: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenReview: (Long) -> Unit,
     viewModel: CaptureViewModel = hiltViewModel(),
@@ -201,13 +202,12 @@ fun CaptureScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.app_name)) },
                 actions = {
-                    // An icon rather than a fourth text button: three text actions plus the title
-                    // do not fit a phone-width top bar, and "add" is the one action here with an
-                    // unambiguous standard glyph.
+                    // An icon rather than a second text button: "add" is the one action here with
+                    // an unambiguous standard glyph, so it doesn't need Settings' text label to
+                    // stay legible.
                     IconButton(onClick = onOpenQuickAdd) {
                         Icon(Icons.Default.Add, contentDescription = stringResource(R.string.capture_add_transaction))
                     }
-                    TextButton(onClick = onOpenRecent) { Text(stringResource(R.string.recent_title)) }
                     TextButton(onClick = onOpenSettings) { Text(stringResource(R.string.settings_title)) }
                 },
             )

@@ -21,6 +21,16 @@
     <string name="recent_title">Recent</string>
     <string name="settings_title">Settings</string>
 
+    <!-- Bottom bar (Task 7) -->
+    <string name="nav_capture">Capture</string>
+    <string name="nav_overview">Overview</string>
+    <string name="nav_activity">Activity</string>
+
+    <!-- Placeholders until Tasks 8/9 replace them with the real screens -->
+    <string name="overview_placeholder">Overview coming soon</string>
+    <string name="activity_placeholder">Activity coming soon</string>
+    <string name="budget_placeholder">Budget coming soon</string>
+
     <!-- Transaction fields (shared by Review and Quick Add) -->
     <string name="field_account">Account</string>
     <string name="field_category">Category</string>

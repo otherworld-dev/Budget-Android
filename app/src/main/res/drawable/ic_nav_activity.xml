@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Material Symbols "receipt_long" (Apache-2.0), hand-authored path data. See BottomBar.kt. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M6,2L8,3.5L10,2L12,3.5L14,2L16,3.5L18,2L18,20L16,18.5L14,20L12,18.5L10,20L8,18.5L6,20z" />
+</vector>
