@@ -28,10 +28,13 @@ Bearer token.
 
 | Method | Path | Request | Success `data` |
 | --- | --- | --- | --- |
-| `GET` | `capabilities` | — | `{ocr_available: bool, currency: "GBP", version: "2.41.0", splits_available?: bool}` |
-| `GET` | `accounts` | — | `[{id, name, currency}]` |
+| `GET` | `capabilities` | — | `{ocr_available: bool, currency: "GBP", version: "2.41.0", splits_available?: bool, check_available?: bool}` |
+| `GET` | `accounts` | — | `[{id, name, currency, type?, balance?, balance_in_base_currency?, base_currency?, closed?, shared?}]` |
 | `GET` | `categories` | — | `[{id, name, parent_id}]` |
-| `GET` | `transactions/recent?limit=50` | — | `[{id, merchant, date, amount, currency, account_name}]` |
+| `GET` | `transactions/recent?limit=50` | — | `[{id, merchant, date, amount, currency, account_name, account_id?, type?, category_name?, splits?, linked_transaction_id?, linked_account_name?}]` |
+| `GET` | `transactions/{id}/splits` | — | `{splits: [...]}` |
+| `GET` | `budget/status?month=YYYY-MM` | — | budget status (Check section, below) |
+| `GET` | `bills/upcoming?days=N` | — | `{days, bills: [...]}` (Check section, below) |
 | `POST` | `ocr/extract` | multipart `image` | draft transaction (below) |
 | `POST` | `transactions` | header `Idempotency-Key`; multipart: `account_id`, `category_id?`, `date`, `merchant`, `amount`, `photo?`, `splits?` | `{id, idempotency_key, splits_error?}` |
 
@@ -259,3 +262,103 @@ as a save error, since the money was recorded either way. The response also now 
 `is_split` and `photo_error`; all three are currently unread by the app (ignored by the JSON decoder,
 not modelled) and are noted here only so a future reader of this contract knows they exist on the
 wire.
+
+## Check (read-only)
+
+A later addition again: alongside capture, the app shows balances, this month's budget and
+upcoming bills. Everything in this section is read-only — nothing here writes to the server, and
+tapping a row only ever opens Budget on the web.
+
+**`check_available` gate.** `GET capabilities` carries `check_available: bool`, gating the whole
+feature the same way `splits_available` gates the split editor. Absent on an older server, and the
+app treats absence the same as `false`: the Overview tab shows a single explanatory state ("Update
+Budget on your server to see balances, budget and bills here") in place of its three sections, and
+Activity keeps rendering rows exactly as it does today — unsigned amounts, no split chip, no
+transfer collapse — rather than assume keys the server never sent.
+
+**`GET budget/status?month=YYYY-MM`.** `month` is optional and defaults to the caller's current
+budget month. Response (`ApiSerializer::budgetStatus()`):
+
+```json
+{
+  "month": "2026-09",
+  "start_date": "2026-09-01",
+  "end_date": "2026-09-30",
+  "currency": "GBP",
+  "totals": { "budgeted": "1450.00", "spent": "912.40", "remaining": "537.60" },
+  "categories": [
+    {
+      "category_id": 12,
+      "name": "Groceries",
+      "parent_id": null,
+      "type": "expense",
+      "period": "monthly",
+      "budgeted": "400.00",
+      "carried": "0.00",
+      "spent": "431.20",
+      "remaining": "-31.20",
+      "shared": false
+    }
+  ]
+}
+```
+
+`totals` covers expense categories only; `categories` still lists income lines, the app just
+doesn't display them. `remaining` can go negative — an overspent category counts against the
+total, not just its own row.
+
+**`GET bills/upcoming?days=N`.** `days` is optional, defaults to 14, and is clamped to 1–90; a
+non-numeric value falls back to the default rather than a 500. Response:
+`{ "days": 14, "bills": [ ... ] }`, each bill (`ApiSerializer::bill()`):
+
+```json
+{
+  "id": 3,
+  "name": "Netflix",
+  "amount": "12.99",
+  "amount_type": "fixed",
+  "currency": "GBP",
+  "frequency": "monthly",
+  "next_due_date": "2026-09-28",
+  "overdue": false,
+  "account_id": 1,
+  "account_name": "Current account",
+  "category_id": 9,
+  "is_transfer": false,
+  "auto_pay": true,
+  "shared": false
+}
+```
+
+The list is sorted overdue first, then by `next_due_date`, and includes shared bills alongside
+the caller's own.
+
+**Extended existing shapes.** `accounts`, `transactions/recent` and the single-transaction record
+all gain keys, every one absent — not sent as `null` — on an older server:
+
+- `accounts` gains `type`, `balance`, `balance_in_base_currency`, `base_currency`, `closed` and
+  `shared`. A shared account's `balance` now runs through the same today-adjustment and currency
+  conversion as an owned one, so the two mean the same thing either way.
+- `transactions/recent` gains `account_id`, `type` (`"debit"` or `"credit"`; amounts themselves
+  stay positive, as everywhere in this contract), `category_name`, `splits`,
+  `linked_transaction_id` and `linked_account_name`.
+- The single-transaction record (`GET transactions/{id}`) gains `linked_transaction_id`,
+  `linked_account_name` and `splits` (the split parts, in `SplitDto` shape, `[]` when the
+  transaction isn't split).
+
+**`linked_account_name` visibility.** Populated only when the other half of the transfer sits in
+an account visible to the caller — their own, or shared with them — else `null`, even though
+`linked_transaction_id` itself is still returned. The app renders a `null` name as a plain
+"Transfer" rather than naming an account the caller can't see.
+
+**`GET transactions/{id}/splits`** returns `{ "splits": [...] }`, the same shape as the inline
+`splits` key above, and 404s when the transaction sits outside the caller's effective accounts.
+It exists for completeness of the contract — the app reads splits from the list rows it already
+has and never calls this route itself.
+
+**Old and part-upgraded servers.** A 404 or 501 from `budget/status` or `bills/upcoming` — a
+server that answers `check_available: true` but hasn't actually shipped the route yet — is treated
+exactly like the capability being absent, for that section only: the Overview tab shows the
+Budget or Bills section as unsupported while the other sections carry on unaffected. Balances and
+Activity aren't gated this way: `accounts` and `transactions/recent` are existing routes that
+simply grew keys, so a 404 or 501 there is a genuine server error, not an old-server signal.

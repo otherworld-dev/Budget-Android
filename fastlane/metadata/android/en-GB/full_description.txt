@@ -1,18 +1,20 @@
 Photograph a paper receipt and save it straight to Budget on your own Nextcloud,
 with the photo attached to the transaction.
 
-Budget Companion works with the Budget app for Nextcloud. It does one job:
-getting a transaction into Budget from your phone — usually by photographing the
-receipt, with a quick manual form for the ones that have no receipt at all.
-Everything else — budgets, reports, bills, charts — stays in Budget's web
-interface.
+Budget Companion works with the Budget app for Nextcloud. It gets a transaction
+into Budget from your phone — usually by photographing the receipt, with a
+quick manual form for the ones that have no receipt at all — and it gives you
+a read-only check on where you stand: account balances, budget left this
+month, and bills due. Setup, import, reports, rules, reconciliation and all
+editing — budgets and bills included — stay in Budget's web interface.
 
 • Snap a receipt, or share an image to the app from anywhere
 • Your Budget server reads the receipt and fills in merchant, date and total
 • Check it, adjust anything, and save
 • Add a transaction by hand in seconds when there's no receipt to photograph
 • Works offline: photos and entries are queued and sent when you're back online
-• See recent transactions to confirm what was saved
+• See your account balances, budget left this month, and bills due soon
+• Recent activity, with split receipts and transfers shown properly
 
 Receipt reading happens on your own Nextcloud server, using whatever backend
 your Budget installation is configured with. This app never sends your receipts

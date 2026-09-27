@@ -6,9 +6,11 @@ into Budget from your phone — usually by photographing the receipt and letting
 your own Nextcloud server extract the details, with a Quick Add form for the
 transactions that have no receipt to photograph.
 
-It is **not** a mobile Budget client — budgets, reports, bills, charts, and
-account/category management all stay in Budget's web interface. This app
-covers capture, review, and quick manual entry only.
+It is **not** a full mobile Budget client. Setup, import, reports, rules,
+reconciliation and all editing — budgets and bills included — stay in
+Budget's web interface. This app covers capture, review, quick manual entry,
+and a read-only check on where you stand: balances, budget left this month,
+and bills due.
 
 ## What it does
 
@@ -17,15 +19,20 @@ covers capture, review, and quick manual entry only.
 - Review, adjust anything, and save — the photo is attached to the transaction
 - Quick Add: record a transaction by hand when there is no receipt at all
 - Works offline: photos and entries are queued locally and sent once you're back online
-- A read-only recent-transactions list to confirm what was saved
+- Check in without opening a browser: account balances, budget left this
+  month, and bills due soon
+- A read-only activity list of recent transactions, including split receipts
+  and transfers between your own accounts
 
 ## What it deliberately doesn't do
 
-No dashboards, budgets, bills, or reports. No account or category creation —
-those are read-only pickers sourced from your server. No purchase flow, no
-subscription UI, no API keys, and no knowledge of which extraction backend
-your server uses: that's entirely your Budget server's concern, not this
-app's. See [`docs/privacy-policy.md`](docs/privacy-policy.md) for the full
+No setup, import, reports, rules, or reconciliation, and nothing here is
+editable — no changing a budget, no marking a bill paid, no creating a
+transfer. No account or category creation either — those are read-only
+pickers sourced from your server. No purchase flow, no subscription UI, no
+API keys, and no knowledge of which extraction backend your server uses:
+that's entirely your Budget server's concern, not this app's. See
+[`docs/privacy-policy.md`](docs/privacy-policy.md) for the full
 data-handling picture (short version: the app collects nothing; traffic runs
 only between your device and your own Nextcloud).
 
