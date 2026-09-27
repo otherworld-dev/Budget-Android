@@ -31,7 +31,7 @@ Bearer token.
 | `GET` | `capabilities` | — | `{ocr_available: bool, currency: "GBP", version: "2.41.0", splits_available?: bool, check_available?: bool}` |
 | `GET` | `accounts` | — | `[{id, name, currency, type?, balance?, balance_in_base_currency?, base_currency?, closed?, shared?}]` |
 | `GET` | `categories` | — | `[{id, name, parent_id}]` |
-| `GET` | `transactions/recent?limit=50` | — | `[{id, merchant, date, amount, currency, account_name, account_id?, type?, category_name?, splits?, linked_transaction_id?, linked_account_name?}]` |
+| `GET` | `transactions/recent?limit=50` | — | `[{id, merchant, date, amount, currency, account_name, account_id?, type?, category_name?, is_split?, splits?, linked_transaction_id?, linked_account_name?}]` |
 | `GET` | `transactions/{id}/splits` | — | `{splits: [...]}` |
 | `GET` | `budget/status?month=YYYY-MM` | — | budget status (Check section, below) |
 | `GET` | `bills/upcoming?days=N` | — | `{days, bills: [...]}` (Check section, below) |
@@ -340,8 +340,11 @@ all gain keys, every one absent — not sent as `null` — on an older server:
   `shared`. A shared account's `balance` now runs through the same today-adjustment and currency
   conversion as an owned one, so the two mean the same thing either way.
 - `transactions/recent` gains `account_id`, `type` (`"debit"` or `"credit"`; amounts themselves
-  stay positive, as everywhere in this contract), `category_name`, `splits`,
-  `linked_transaction_id` and `linked_account_name`.
+  stay positive, as everywhere in this contract), `category_name`, `is_split`, `splits`,
+  `linked_transaction_id` and `linked_account_name`. `is_split` is currently unread by the app
+  (ignored by the JSON decoder, not modelled) -- it derives a row's split state from whether
+  `splits` is empty rather than trusting a separate flag, and `is_split` is noted here only so a
+  future reader of this contract knows it's on the wire.
 - The single-transaction record (`GET transactions/{id}`) gains `linked_transaction_id`,
   `linked_account_name` and `splits` (the split parts, in `SplitDto` shape, `[]` when the
   transaction isn't split).

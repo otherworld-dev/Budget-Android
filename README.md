@@ -43,15 +43,24 @@ tests, plus instrumented Compose, navigation and credential tests on-device —
 against `FakeBudgetApi`, an in-app reference implementation of the server
 contract in [`docs/server-api-contract.md`](docs/server-api-contract.md).
 
-The server side of that contract is fully implemented in the Budget PHP app,
+The capture side of that contract — OCR extraction, transaction posting,
+splits and the idempotency key — is fully implemented in the Budget PHP app,
 and the app has been verified working end-to-end against a live Nextcloud —
 login flow, receipt extraction, transaction posting and photo upload all
 functioning against a real server.
 
+The check side (`budget/status`, `bills/upcoming`, `transactions/{id}/splits`,
+and the extended `accounts`/`transactions/recent` shapes behind them) is new
+in this contract and isn't implemented on any server yet. Until it is,
+Overview shows its "update Budget on your server" message in place of
+balances, budget and bills, and Activity keeps rendering rows exactly as it
+does today.
+
 ## Requirements
 
-- A Nextcloud server with the Budget app installed (once the server side of
-  this contract lands — see Status above)
+- A Nextcloud server with the Budget app installed — capture works against
+  any server today; balances, budget and bills need the check routes to land
+  server-side first (see Status above)
 - Android 8.0 (API 26) or later
 
 ## Building
