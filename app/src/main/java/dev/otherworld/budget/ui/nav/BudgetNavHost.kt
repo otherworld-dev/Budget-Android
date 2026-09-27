@@ -6,8 +6,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -193,15 +195,31 @@ fun BudgetNavHost(
             // Routes.BUDGET is Overview's own detail push (see TOP_LEVEL_ROUTES's KDoc for why
             // it isn't a fourth tab), not a destination reachable any other way -- so it shares
             // Overview's own OverviewViewModel rather than fetching the same data again. That
-            // instance is scoped to the Overview back-stack entry; getBackStackEntry throws if
-            // that entry isn't on the stack, which happens on a process-death restore straight
-            // into Routes.BUDGET (Android can recreate any single destination, not just the
-            // graph's start one) -- runCatching's null then falls back to a plain hiltViewModel(),
-            // scoped to this entry instead, rather than crashing the whole screen.
-            composable(Routes.BUDGET) {
-                val ownerEntry = runCatching { nav.getBackStackEntry(Routes.OVERVIEW) }.getOrNull()
+            // instance is scoped to the Overview back-stack entry, looked up once per Budget entry
+            // (remembered, so it isn't re-resolved on every recomposition).
+            //
+            // The fallback to a ViewModel scoped to this entry is for one case: a tab tap pops
+            // Overview and Budget together while Budget is still composed for its exit animation.
+            // By then Overview's entry is destroyed and its ViewModels can't be reached (asking
+            // throws), hence the lifecycle check; getBackStackEntry's IllegalArgumentException
+            // covers the same entry already being gone when this first composes. A process-death
+            // restore is *not* that case -- Navigation restores the whole [Capture, Overview,
+            // Budget] stack, so Overview's entry is there; see BudgetScreen's KDoc for what that
+            // one needs instead.
+            composable(Routes.BUDGET) { entry ->
+                val ownerEntry = remember(entry) {
+                    try {
+                        nav.getBackStackEntry(Routes.OVERVIEW)
+                    } catch (e: IllegalArgumentException) {
+                        null
+                    }
+                }
                 val budgetViewModel: OverviewViewModel =
-                    if (ownerEntry != null) hiltViewModel(ownerEntry) else hiltViewModel()
+                    if (ownerEntry != null && ownerEntry.lifecycle.currentState.isAtLeast(Lifecycle.State.CREATED)) {
+                        hiltViewModel(ownerEntry)
+                    } else {
+                        hiltViewModel()
+                    }
                 BudgetScreen(onBack = { nav.popBackStack() }, viewModel = budgetViewModel)
             }
 

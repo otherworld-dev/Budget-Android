@@ -18,6 +18,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -29,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.otherworld.budget.R
 import dev.otherworld.budget.domain.model.BudgetLine
@@ -41,6 +43,11 @@ import dev.otherworld.budget.ui.common.openInBrowser
  * again: see [dev.otherworld.budget.ui.nav.BudgetNavHost] for how that instance is scoped to the
  * Overview back-stack entry. No pull-to-refresh of its own -- Overview already owns that, and
  * this screen is a read-only expansion of exactly the same [CheckRepository] state.
+ *
+ * It does refresh on resume, though, rather than leaning on Overview to have done it. After
+ * process death Navigation restores [Capture, Overview, Budget] but composes only Budget, so
+ * Overview's own resume never runs and the new process's [CheckRepository] is never seeded:
+ * without this the screen came back blank, with every branch below false and nothing to tap.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -51,6 +58,11 @@ fun BudgetScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val budget = uiState.budget
     val context = LocalContext.current
+
+    LifecycleResumeEffect(Unit) {
+        viewModel.onVisible()
+        onPauseOrDispose { }
+    }
 
     // Same no-browser guard as Overview's own rows (ui/common/OpenInBrowser.kt) -- rows here are
     // tappable too (spec §2.2, review fix round 1 finding 3), so this screen needs it independently
@@ -101,7 +113,12 @@ fun BudgetScreen(
                     budget.refreshing -> Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(modifier = Modifier.padding(32.dp))
                     }
-                    budget.error != null -> Text(budget.error, color = MaterialTheme.colorScheme.error)
+                    // Same message + Retry as Overview's SectionBody: an error with no data is
+                    // otherwise a dead end, since this screen has no pull-to-refresh.
+                    budget.error != null -> Column {
+                        Text(budget.error, color = MaterialTheme.colorScheme.error)
+                        TextButton(onClick = viewModel::refresh) { Text(stringResource(R.string.common_try_again)) }
+                    }
                 }
             }
         }
