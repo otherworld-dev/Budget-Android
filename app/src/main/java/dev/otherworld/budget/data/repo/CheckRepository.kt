@@ -8,6 +8,7 @@ import dev.otherworld.budget.domain.model.Account
 import dev.otherworld.budget.domain.model.BudgetStatus
 import dev.otherworld.budget.domain.model.RecentTransaction
 import dev.otherworld.budget.domain.model.UpcomingBill
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -140,9 +141,9 @@ class CheckRepository @Inject constructor(
     private suspend fun refreshBalances(gen: Int, force: Boolean) {
         if (!force && isFresh(_balances.value.fetchedAt)) return
         if (!apply(gen, _balances) { it.copy(refreshing = true) }) return
-        val before = catalog.accountsFetchedAt()
-        val result = catalog.accounts(forceRefresh = true)
-        val after = catalog.accountsFetchedAt()
+        val (before, result, after) = clearingOnCancel(gen, _balances) {
+            Triple(catalog.accountsFetchedAt(), catalog.accounts(forceRefresh = true), catalog.accountsFetchedAt())
+        }
         result.fold(
             onSuccess = { accounts ->
                 val error = if (after == null || after == before) BudgetApiError.Network(null) else null
@@ -171,7 +172,7 @@ class CheckRepository @Inject constructor(
         // An unsupported section is always retried: the server may have been upgraded since.
         if (!force && !current.unsupported && isFresh(current.fetchedAt)) return
         if (!apply(gen, flow) { it.copy(refreshing = true) }) return
-        fetch().fold(
+        clearingOnCancel(gen, flow) { fetch() }.fold(
             onSuccess = { value ->
                 if (apply(gen, flow) { Section(data = value, fetchedAt = now()) }) {
                     snapshots.write(kind, encode(value))
@@ -186,6 +187,23 @@ class CheckRepository @Inject constructor(
                 }
             },
         )
+    }
+
+    /**
+     * Runs a section's network phase, dropping its `refreshing` flag if the refresh is cancelled
+     * mid-flight. This is a singleton that outlives the screen whose scope launched the refresh:
+     * a flag left set would spin until the next *forced* refresh, since a non-forced one returns
+     * at the freshness check without touching it.
+     */
+    private suspend fun <T, R> clearingOnCancel(
+        gen: Int,
+        flow: MutableStateFlow<Section<T>>,
+        block: suspend () -> R,
+    ): R = try {
+        block()
+    } catch (e: CancellationException) {
+        apply(gen, flow) { it.copy(refreshing = false) }
+        throw e
     }
 
     /** Applies [transform] only if no [reset] has happened since [gen] was captured. */

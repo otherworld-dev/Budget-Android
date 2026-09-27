@@ -84,6 +84,10 @@ class SessionManagerTest {
     private val authExpiry = CredentialExpiry(
         InMemoryCredentialStore(),
         javax.inject.Provider { CatalogRepository(FakeBudgetApi(), TestSnapshots.inMemory(InMemoryCredentialStore())) },
+        javax.inject.Provider {
+            val snapshots = TestSnapshots.fake()
+            CheckRepository(FakeBudgetApi(), CatalogRepository(FakeBudgetApi(), snapshots), snapshots, now = { Instant.now() })
+        },
         currencyCache,
     )
 

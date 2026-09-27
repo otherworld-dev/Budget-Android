@@ -4,6 +4,7 @@ import dev.otherworld.budget.RobolectricTestApplication
 import dev.otherworld.budget.data.remote.FallbackCurrencyCache
 import dev.otherworld.budget.data.remote.fake.FakeBudgetApi
 import dev.otherworld.budget.data.repo.CatalogRepository
+import dev.otherworld.budget.data.repo.CheckRepository
 import dev.otherworld.budget.data.repo.TestSnapshots
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
@@ -17,6 +18,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.time.Instant
 import javax.inject.Provider
 
 /**
@@ -31,9 +33,11 @@ class CredentialExpiryTest {
 
     private val api = FakeBudgetApi()
     private val store = InMemoryCredentialStore(Credentials("https://cloud.example", "adam", "pw"))
-    private val catalog = CatalogRepository(api, TestSnapshots.inMemory(store))
+    private val snapshots = TestSnapshots.inMemory(store)
+    private val catalog = CatalogRepository(api, snapshots)
+    private val check = CheckRepository(api, catalog, snapshots, now = { Instant.now() })
     private val currencyCache = FallbackCurrencyCache()
-    private val expiry = CredentialExpiry(store, Provider { catalog }, currencyCache)
+    private val expiry = CredentialExpiry(store, Provider { catalog }, Provider { check }, currencyCache)
 
     @Test
     fun `an expiry clears the credentials`() {
@@ -53,6 +57,23 @@ class CredentialExpiryTest {
         catalog.accounts()
 
         assertEquals(2, api.accountCalls)
+    }
+
+    @Test
+    fun `an expiry resets the check sections`() = runTest {
+        // The next sign-in may be a different user on the same server, which signIn cannot tell
+        // apart from the same one returning -- so the previous user's figures must go now.
+        check.refresh()
+        assertNotNull(check.balances.value.data)
+        assertNotNull(check.recent.value.data)
+
+        expiry.onUnauthorized(expiry.currentGeneration)
+
+        assertNull(check.balances.value.data)
+        assertNull(check.budget.value.data)
+        assertNull(check.bills.value.data)
+        assertNull(check.recent.value.data)
+        assertNull(check.recent.value.fetchedAt)   // so the next refresh can't skip it as fresh
     }
 
     @Test

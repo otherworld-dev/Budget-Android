@@ -193,6 +193,25 @@ class CheckRepositoryTest {
     }
 
     @Test
+    fun `a cancelled refresh does not leave sections refreshing`() = runTest(dispatcher) {
+        api.latencyMs = 1000
+
+        val job = launch { repo.refresh() }
+        advanceTimeBy(1500)                        // all four section fetches in flight
+        assertTrue(repo.recent.value.refreshing)
+        assertTrue(repo.balances.value.refreshing)
+        job.cancel()
+        advanceUntilIdle()
+
+        // A singleton outlives the screen that cancelled it: a flag left set here would spin until
+        // the next forced refresh, since a non-forced one returns at the freshness check.
+        assertFalse(repo.balances.value.refreshing)
+        assertFalse(repo.budget.value.refreshing)
+        assertFalse(repo.bills.value.refreshing)
+        assertFalse(repo.recent.value.refreshing)
+    }
+
+    @Test
     fun `a result landing after reset is discarded`() = runTest(dispatcher) {
         api.latencyMs = 1000
 
