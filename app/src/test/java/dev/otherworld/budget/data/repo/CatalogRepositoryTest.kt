@@ -3,11 +3,16 @@ package dev.otherworld.budget.data.repo
 import dev.otherworld.budget.RobolectricTestApplication
 import dev.otherworld.budget.data.auth.Credentials
 import dev.otherworld.budget.data.auth.InMemoryCredentialStore
+import dev.otherworld.budget.data.local.SnapshotCodec
+import dev.otherworld.budget.data.local.SnapshotKind
 import dev.otherworld.budget.data.remote.BudgetApiError
 import dev.otherworld.budget.data.remote.fake.FakeBudgetApi
 import dev.otherworld.budget.domain.model.Account
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -165,5 +170,28 @@ class CatalogRepositoryTest {
         // The snapshot was never re-written by the failed refresh, so its fetchedAt is still T0,
         // not bumped to T1 -- a fetch that never happened must not corrupt the staleness reading.
         assertEquals(fetchedAtT0, repo.accountsFetchedAt())
+    }
+
+    @Test
+    fun `a fetch that lands after sign-out and a new sign-in is neither kept nor persisted`() = runTest {
+        // Alice's Overview forces an accounts fetch; she signs out while it is in flight, and bob
+        // signs in to the same server before her answer lands (the read timeout is 120 s).
+        val credentials = InMemoryCredentialStore(Credentials("https://cloud.example", "alice", "pw"))
+        val snapshots = TestSnapshots.fake(credentials)
+        val api = FakeBudgetApi(latencyMs = 1000)
+        val repo = CatalogRepository(api, snapshots)
+
+        val inFlight = async { repo.accounts(forceRefresh = true) }
+        advanceTimeBy(500)
+        repo.clearPersisted()
+        credentials.save(Credentials("https://cloud.example", "bob", "pw"))
+        inFlight.await()
+
+        // Nothing of alice's reached bob: not the snapshot...
+        assertNull(snapshots.read(SnapshotKind.ACCOUNTS, SnapshotCodec::decodeAccounts))
+        // ...and not memory: offline, an unforced call has nothing to answer with.
+        api.latencyMs = 0
+        api.nextError = BudgetApiError.Network(null)
+        assertTrue(repo.accounts().isFailure)
     }
 }

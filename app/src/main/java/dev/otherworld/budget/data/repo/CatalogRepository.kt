@@ -47,6 +47,18 @@ class CatalogRepository @Inject constructor(
     private val categories = Slot<List<Category>>()
     private val capabilities = Slot<Capabilities>()
 
+    /**
+     * The session a fetch belongs to, bumped by every [invalidate] (and so every
+     * [clearPersisted]). [cached] captures it before fetching and drops the answer -- neither kept
+     * in memory nor persisted -- when it has moved on by the time the answer lands: with a 120 s
+     * read timeout, the user that fetch was for can have signed out, and someone else signed in,
+     * in the meantime. Guarded by [stateLock] together with the slots, so "is this still the same
+     * session?" and "keep the answer" are one step. Deliberately not [lock]: sign-out must never
+     * queue behind a fetch that may take two minutes to time out.
+     */
+    private val stateLock = Any()
+    private var epoch = 0
+
     suspend fun accounts(forceRefresh: Boolean = false): Result<List<Account>> = lock.withLock {
         cached(
             slot = accounts,
@@ -93,6 +105,11 @@ class CatalogRepository @Inject constructor(
      *    value did not just come from the network, and doing so would bump its `fetchedAt` to
      *    now, corrupting [accountsFetchedAt]'s staleness reading with a fetch that never
      *    happened. Otherwise, the original failure stands.
+     *
+     * Steps 2 and 3 only touch memory while [epoch] is still the one captured before the fetch,
+     * and the snapshot is written under the owner captured at the same moment (see
+     * [SnapshotStore.write]); an answer that outlived its session is returned to its caller and
+     * otherwise forgotten.
      */
     private suspend fun <T> cached(
         slot: Slot<T>,
@@ -102,20 +119,29 @@ class CatalogRepository @Inject constructor(
         decode: (String) -> T?,
         fetch: suspend () -> Result<T>,
     ): Result<T> {
-        val current = slot.value
-        if (current != null && slot.fresh && !forceRefresh) return Result.success(current)
+        val (startEpoch, current, fresh) = synchronized(stateLock) { Triple(epoch, slot.value, slot.fresh) }
+        if (current != null && fresh && !forceRefresh) return Result.success(current)
+        val owner = snapshots.currentOwner()
         val result = fetch()
         return result.fold(
             onSuccess = {
-                slot.value = it
-                slot.fresh = true
-                snapshots.write(kind, encode(it))
+                val kept = synchronized(stateLock) {
+                    if (epoch != startEpoch) return@synchronized false
+                    slot.value = it
+                    slot.fresh = true
+                    true
+                }
+                if (kept) snapshots.write(kind, encode(it), owner)
                 result
             },
             onFailure = {
                 val fallback = snapshots.read(kind, decode) ?: return result
-                slot.value = fallback.value
-                slot.fresh = false
+                synchronized(stateLock) {
+                    if (epoch == startEpoch) {
+                        slot.value = fallback.value
+                        slot.fresh = false
+                    }
+                }
                 Result.success(fallback.value)
             },
         )
@@ -126,17 +152,24 @@ class CatalogRepository @Inject constructor(
         snapshots.read(SnapshotKind.ACCOUNTS, SnapshotCodec::decodeAccounts)?.fetchedAt
 
     /**
-     * Drops the in-memory values (non-suspending: [dev.otherworld.budget.data.auth.CredentialExpiry]
-     * calls it from the request path). Deliberately leaves the persisted snapshots alone -- see
+     * Drops the in-memory values and starts a new [epoch], so a fetch still in flight cannot put
+     * them back (non-suspending: [dev.otherworld.budget.data.auth.CredentialExpiry] calls it from
+     * the request path). Deliberately leaves the persisted snapshots alone -- see
      * that class's KDoc for why an expiry does not need to touch them.
      */
     fun invalidate() {
-        accounts.value = null; accounts.fresh = false
-        categories.value = null; categories.fresh = false
-        capabilities.value = null; capabilities.fresh = false
+        synchronized(stateLock) {
+            epoch++
+            accounts.value = null; accounts.fresh = false
+            categories.value = null; categories.fresh = false
+            capabilities.value = null; capabilities.fresh = false
+        }
     }
 
-    /** [invalidate] plus the persisted snapshots -- sign-out and a server change on sign-in. */
+    /**
+     * [invalidate] plus the persisted snapshots -- sign-out and a server change on sign-in. Never
+     * takes [lock]: see [epoch] for why it need not, and why it must not.
+     */
     suspend fun clearPersisted() {
         invalidate()
         snapshots.clear()

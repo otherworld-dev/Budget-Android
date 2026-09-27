@@ -36,6 +36,12 @@ class FakeBudgetApi(
      */
     var unsupportedCheckRoutes: Boolean = false,
     /**
+     * The status [unsupportedCheckRoutes] and [unsupportedBudgetOnly] answer with. 404 by default
+     * (the route is missing); 501 is the other "this server can't serve it" answer the check side
+     * must treat the same way.
+     */
+    var unsupportedStatus: Int = 404,
+    /**
      * Fails [upcomingBills] alone with a [BudgetApiError.Network], leaving every other route
      * answering -- the per-section failure case [nextError] cannot reach, since it fails them all.
      */
@@ -143,13 +149,13 @@ class FakeBudgetApi(
         budgetCalls++
         // Checked before respond(), like ocrAvailable above -- respond()'s recoverCatching would
         // otherwise flatten a thrown ServerError(404) into ServerError(0).
-        if (unsupportedCheckRoutes || unsupportedBudgetOnly) return Result.failure(BudgetApiError.ServerError(404))
+        if (unsupportedCheckRoutes || unsupportedBudgetOnly) return Result.failure(BudgetApiError.ServerError(unsupportedStatus))
         return respond { budgetResult }
     }
 
     override suspend fun upcomingBills(days: Int): Result<List<UpcomingBill>> {
         billsCalls++
-        if (unsupportedCheckRoutes) return Result.failure(BudgetApiError.ServerError(404))
+        if (unsupportedCheckRoutes) return Result.failure(BudgetApiError.ServerError(unsupportedStatus))
         if (failBills) return Result.failure(BudgetApiError.Network(null))
         return respond { billsResult }
     }

@@ -65,6 +65,9 @@ class CheckRepository @Inject constructor(
     /** Loads cached sections (once per process), then refetches kinds older than STALE_AFTER (all when force). */
     suspend fun refresh(force: Boolean = false) {
         val gen = synchronized(stateLock) { generation }
+        // Captured with the generation, for the same reason: the snapshot a fetch writes belongs
+        // to whoever was signed in when it started (see SnapshotStore.write).
+        val owner = snapshots.currentOwner()
         seed(gen)
         refreshLock.withLock {
             if (!isCurrent(gen)) return
@@ -73,20 +76,20 @@ class CheckRepository @Inject constructor(
             val checkAvailable =
                 catalog.capabilities(forceRefresh = force).getOrNull()?.checkAvailable ?: true
             coroutineScope {
-                launch { refreshBalances(gen, force) }
+                launch { refreshBalances(gen, owner, force) }
                 launch {
-                    refreshSection(gen, force, _recent, SnapshotKind.RECENT, SnapshotCodec::encodeRecent) {
+                    refreshSection(gen, owner, force, _recent, SnapshotKind.RECENT, SnapshotCodec::encodeRecent) {
                         api.recentTransactions()
                     }
                 }
                 if (checkAvailable) {
                     launch {
-                        refreshSection(gen, force, _budget, SnapshotKind.BUDGET_STATUS, SnapshotCodec::encodeBudget, gated = true) {
+                        refreshSection(gen, owner, force, _budget, SnapshotKind.BUDGET_STATUS, SnapshotCodec::encodeBudget, gated = true) {
                             api.budgetStatus()
                         }
                     }
                     launch {
-                        refreshSection(gen, force, _bills, SnapshotKind.UPCOMING_BILLS, SnapshotCodec::encodeBills, gated = true) {
+                        refreshSection(gen, owner, force, _bills, SnapshotKind.UPCOMING_BILLS, SnapshotCodec::encodeBills, gated = true) {
                             api.upcomingBills(BILL_DAYS)
                         }
                     }
@@ -138,12 +141,13 @@ class CheckRepository @Inject constructor(
      * -- which only moves on a real fetch -- never [now], and a call that didn't move it is
      * reported as a [BudgetApiError.Network] so the section reads as stale rather than current.
      */
-    private suspend fun refreshBalances(gen: Int, force: Boolean) {
+    private suspend fun refreshBalances(gen: Int, owner: String?, force: Boolean) {
         if (!force && isFresh(_balances.value.fetchedAt)) return
         if (!apply(gen, _balances) { it.copy(refreshing = true) }) return
         val (before, result, after) = clearingOnCancel(gen, _balances) {
             Triple(catalog.accountsFetchedAt(), catalog.accounts(forceRefresh = true), catalog.accountsFetchedAt())
         }
+        if (ownerChanged(gen, owner, _balances)) return
         result.fold(
             onSuccess = { accounts ->
                 val error = if (after == null || after == before) BudgetApiError.Network(null) else null
@@ -157,10 +161,12 @@ class CheckRepository @Inject constructor(
      * One section's fetch. [gated] marks a check-only route (budget, bills): a 404 or 501 there
      * is a part-upgraded server that can't serve it, shown as unsupported rather than an error.
      * The snapshot is written only after the result was applied under the still-current
-     * generation, so a result [reset] discarded never reaches disk either.
+     * generation, so a result [reset] discarded never reaches disk either, and it is written
+     * under [owner], the one signed in when the refresh began.
      */
     private suspend fun <T> refreshSection(
         gen: Int,
+        owner: String?,
         force: Boolean,
         flow: MutableStateFlow<Section<T>>,
         kind: SnapshotKind,
@@ -172,10 +178,12 @@ class CheckRepository @Inject constructor(
         // An unsupported section is always retried: the server may have been upgraded since.
         if (!force && !current.unsupported && isFresh(current.fetchedAt)) return
         if (!apply(gen, flow) { it.copy(refreshing = true) }) return
-        clearingOnCancel(gen, flow) { fetch() }.fold(
+        val result = clearingOnCancel(gen, flow) { fetch() }
+        if (ownerChanged(gen, owner, flow)) return
+        result.fold(
             onSuccess = { value ->
                 if (apply(gen, flow) { Section(data = value, fetchedAt = now()) }) {
-                    snapshots.write(kind, encode(value))
+                    snapshots.write(kind, encode(value), owner)
                 }
             },
             onFailure = { e ->
@@ -215,6 +223,18 @@ class CheckRepository @Inject constructor(
         if (gen != generation) return false
         flow.update(transform)
         true
+    }
+
+    /**
+     * True, after dropping [flow]'s `refreshing` flag, when someone other than [owner] is signed in
+     * now: the answer in hand is the previous user's and must not be shown to, or stored for, the
+     * next one. [reset] normally catches this first -- SessionManager and CredentialExpiry both
+     * call it -- but the owner check means a path that ever forgets to still cannot leak.
+     */
+    private fun <T> ownerChanged(gen: Int, owner: String?, flow: MutableStateFlow<Section<T>>): Boolean {
+        if (snapshots.currentOwner() == owner) return false
+        apply(gen, flow) { it.copy(refreshing = false) }
+        return true
     }
 
     private fun isCurrent(gen: Int) = synchronized(stateLock) { gen == generation }

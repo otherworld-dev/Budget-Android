@@ -33,7 +33,7 @@ class SnapshotStoreTest {
     @Test
     fun `read returns what write stored with fetchedAt from the clock`() = runTest {
         val subject = store()
-        subject.write(SnapshotKind.ACCOUNTS, """{"value":"hi"}""")
+        subject.write(SnapshotKind.ACCOUNTS, """{"value":"hi"}""", subject.currentOwner())
 
         val cached = subject.read(SnapshotKind.ACCOUNTS) { it }!!
         assertEquals("""{"value":"hi"}""", cached.value)
@@ -43,7 +43,7 @@ class SnapshotStoreTest {
     @Test
     fun `read ignores a row written for another server`() = runTest {
         val subject = store()
-        subject.write(SnapshotKind.ACCOUNTS, """{"value":"alice's"}""")
+        subject.write(SnapshotKind.ACCOUNTS, """{"value":"alice's"}""", subject.currentOwner())
 
         credentialStore.save(bob)
         assertNull(subject.read(SnapshotKind.ACCOUNTS) { it })
@@ -53,7 +53,7 @@ class SnapshotStoreTest {
     fun `write is a no-op when signed out`() = runTest {
         credentialStore.clear()
         val subject = store()
-        subject.write(SnapshotKind.ACCOUNTS, """{"value":"hi"}""")
+        subject.write(SnapshotKind.ACCOUNTS, """{"value":"hi"}""", subject.currentOwner())
 
         credentialStore.save(alice)
         assertNull(subject.read(SnapshotKind.ACCOUNTS) { it })
@@ -62,8 +62,8 @@ class SnapshotStoreTest {
     @Test
     fun `clear removes every kind`() = runTest {
         val subject = store()
-        subject.write(SnapshotKind.ACCOUNTS, """{"a":1}""")
-        subject.write(SnapshotKind.RECENT, """{"b":2}""")
+        subject.write(SnapshotKind.ACCOUNTS, """{"a":1}""", subject.currentOwner())
+        subject.write(SnapshotKind.RECENT, """{"b":2}""", subject.currentOwner())
 
         subject.clear()
 
@@ -74,8 +74,23 @@ class SnapshotStoreTest {
     @Test
     fun `malformed json reads as null`() = runTest {
         val subject = store()
-        subject.write(SnapshotKind.ACCOUNTS, "not json")
+        subject.write(SnapshotKind.ACCOUNTS, "not json", subject.currentOwner())
 
         assertNull(subject.read(SnapshotKind.ACCOUNTS) { raw -> raw.takeIf { it == "valid" } })
+    }
+
+    @Test
+    fun `a write for an owner who is no longer signed in is dropped`() = runTest {
+        // The owner a fetch started under, not whoever is signed in when it lands: a late answer
+        // from alice's session must not be stored as bob's.
+        val subject = store()
+        val aliceOwner = subject.currentOwner()
+
+        credentialStore.save(bob)
+        subject.write(SnapshotKind.ACCOUNTS, """{"value":"alice's"}""", aliceOwner)
+
+        assertNull(subject.read(SnapshotKind.ACCOUNTS) { it })
+        credentialStore.save(alice)
+        assertNull(subject.read(SnapshotKind.ACCOUNTS) { it })
     }
 }

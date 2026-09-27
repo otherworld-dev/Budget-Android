@@ -1,5 +1,7 @@
 package dev.otherworld.budget.data.repo
 
+import dev.otherworld.budget.data.auth.Credentials
+import dev.otherworld.budget.data.auth.InMemoryCredentialStore
 import dev.otherworld.budget.data.local.SnapshotCodec
 import dev.otherworld.budget.data.local.SnapshotKind
 import dev.otherworld.budget.data.remote.BudgetApiError
@@ -34,13 +36,15 @@ class CheckRepositoryTest {
     private var clock = t0
 
     private val api = FakeBudgetApi()
-    private val snapshots = TestSnapshots.fake(now = { clock })
-    private val repo = CheckRepository(api, CatalogRepository(api, snapshots), snapshots, now = { clock })
+    private val credentials = InMemoryCredentialStore(Credentials("https://cloud.example", "adam", "pw"))
+    private val snapshots = TestSnapshots.fake(credentials, now = { clock })
+    private val catalog = CatalogRepository(api, snapshots)
+    private val repo = CheckRepository(api, catalog, snapshots, now = { clock })
 
     @Test
     fun `first refresh emits cached data before the network answers`() = runTest(dispatcher) {
         val cached = FakeCheckData.recent.take(1)
-        snapshots.write(SnapshotKind.RECENT, SnapshotCodec.encodeRecent(cached))
+        snapshots.write(SnapshotKind.RECENT, SnapshotCodec.encodeRecent(cached), snapshots.currentOwner())
         clock = t0 + Duration.ofHours(1)          // stale, so the refresh refetches it
         api.latencyMs = 1000
 
@@ -83,7 +87,7 @@ class CheckRepositoryTest {
     @Test
     fun `a failed section keeps its cached data and sets error while others succeed`() = runTest(dispatcher) {
         val cachedBills = FakeCheckData.bills.take(1)
-        snapshots.write(SnapshotKind.UPCOMING_BILLS, SnapshotCodec.encodeBills(cachedBills))
+        snapshots.write(SnapshotKind.UPCOMING_BILLS, SnapshotCodec.encodeBills(cachedBills), snapshots.currentOwner())
         clock = t0 + Duration.ofHours(1)
         api.unsupportedCheckRoutes = false
         api.failBills = true
@@ -133,6 +137,23 @@ class CheckRepositoryTest {
             assertTrue(unsupported); assertNull(error)
         }
         assertEquals(1, api.budgetCalls)
+    }
+
+    @Test
+    fun `a 501 on the check routes marks them unsupported, not errored`() = runTest(dispatcher) {
+        // 501 is what a server answers when the route exists but the feature behind it is not
+        // implemented there -- the same "can't serve this" as a 404, not a failure to retry.
+        api.unsupportedCheckRoutes = true
+        api.unsupportedStatus = 501
+
+        repo.refresh()
+
+        with(repo.budget.value) {
+            assertTrue(unsupported); assertNull(error); assertFalse(refreshing)
+        }
+        with(repo.bills.value) {
+            assertTrue(unsupported); assertNull(error); assertFalse(refreshing)
+        }
     }
 
     @Test
@@ -228,6 +249,32 @@ class CheckRepositoryTest {
         assertNull(repo.balances.value.data)
         assertFalse(repo.recent.value.refreshing)
         // Neither applied nor written: the next session must not seed from it either.
+        assertNull(snapshots.read(SnapshotKind.RECENT, SnapshotCodec::decodeRecent))
+        assertNull(snapshots.read(SnapshotKind.BUDGET_STATUS, SnapshotCodec::decodeBudget))
+        assertNull(snapshots.read(SnapshotKind.UPCOMING_BILLS, SnapshotCodec::decodeBills))
+    }
+
+    @Test
+    fun `a result landing after sign-out and a new sign-in is neither applied nor written`() = runTest(dispatcher) {
+        api.latencyMs = 1000
+
+        launch { repo.refresh() }
+        advanceTimeBy(1500)                        // all four section fetches in flight
+        assertTrue(repo.recent.value.refreshing)
+        // No reset() here, deliberately: this pins the owner guard on its own, so a path that
+        // clears the catalog and switches user without resetting still cannot leak adam's figures
+        // into bob's session.
+        catalog.clearPersisted()
+        credentials.save(Credentials("https://cloud.example", "bob", "pw"))
+        advanceUntilIdle()
+
+        assertNull(repo.balances.value.data)
+        assertNull(repo.budget.value.data)
+        assertNull(repo.bills.value.data)
+        assertNull(repo.recent.value.data)
+        assertFalse(repo.recent.value.refreshing)
+        assertFalse(repo.balances.value.refreshing)
+        assertNull(snapshots.read(SnapshotKind.ACCOUNTS, SnapshotCodec::decodeAccounts))
         assertNull(snapshots.read(SnapshotKind.RECENT, SnapshotCodec::decodeRecent))
         assertNull(snapshots.read(SnapshotKind.BUDGET_STATUS, SnapshotCodec::decodeBudget))
         assertNull(snapshots.read(SnapshotKind.UPCOMING_BILLS, SnapshotCodec::decodeBills))
