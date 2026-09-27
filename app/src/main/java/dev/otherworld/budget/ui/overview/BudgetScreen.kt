@@ -1,5 +1,6 @@
 package dev.otherworld.budget.ui.overview
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,13 +21,18 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.otherworld.budget.R
 import dev.otherworld.budget.domain.model.BudgetLine
+import dev.otherworld.budget.ui.common.openInBrowser
 
 /**
  * All expense categories with a budget, sorted the same way as Overview's compact "at risk" card
@@ -44,6 +50,16 @@ fun BudgetScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val budget = uiState.budget
+    val context = LocalContext.current
+
+    // Same no-browser guard as Overview's own rows (ui/common/OpenInBrowser.kt) -- rows here are
+    // tappable too (spec §2.2, review fix round 1 finding 3), so this screen needs it independently
+    // rather than relying on Overview's, which is a different composable entirely.
+    var openFailed by remember { mutableStateOf(false) }
+    fun open(url: String?) {
+        url ?: return
+        if (!context.openInBrowser(url)) openFailed = true
+    }
 
     Scaffold(
         topBar = {
@@ -57,31 +73,48 @@ fun BudgetScreen(
             )
         },
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 16.dp)
-                .verticalScroll(rememberScrollState()),
-        ) {
-            val data = budget.data
-            when {
-                data != null -> data.byRisk().forEach { line -> BudgetDetailRow(line) }
-                budget.refreshing -> Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(modifier = Modifier.padding(32.dp))
+        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+            if (openFailed) {
+                ErrorBanner(
+                    message = stringResource(R.string.activity_no_opener),
+                    onDismiss = { openFailed = false },
+                )
+            }
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                val data = budget.data
+                when {
+                    data != null -> data.byRisk().forEach { line ->
+                        BudgetDetailRow(line, onOpen = { open(viewModel.budgetUrl()) })
+                    }
+                    // Same "part-upgraded server" case OverviewScreen's SectionBody handles --
+                    // this screen has its own inline state handling rather than SectionBody
+                    // itself, since it renders only the one section, not three.
+                    budget.unsupported -> Text(
+                        stringResource(R.string.overview_section_unsupported),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    budget.refreshing -> Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(modifier = Modifier.padding(32.dp))
+                    }
+                    budget.error != null -> Text(budget.error, color = MaterialTheme.colorScheme.error)
                 }
-                budget.error != null -> Text(budget.error, color = MaterialTheme.colorScheme.error)
             }
         }
     }
 }
 
-/** One category's full detail: spent-of-budgeted, remaining, and a bar (spec §2.2). */
+/** One category's full detail: spent-of-budgeted, remaining, and a bar (spec §2.2). Tapping it
+ *  opens the Budget web page, same as Overview's own compact row for the same category. */
 @Composable
-private fun BudgetDetailRow(line: BudgetLine) {
+private fun BudgetDetailRow(line: BudgetLine, onOpen: () -> Unit) {
     val negative = line.remaining.amount.signum() < 0
     val color = if (negative) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+    Column(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(vertical = 12.dp)) {
         Text(line.name, style = MaterialTheme.typography.bodyLarge)
         Text(
             stringResource(R.string.overview_budget_line, line.spent.format(), line.budgeted.format()),

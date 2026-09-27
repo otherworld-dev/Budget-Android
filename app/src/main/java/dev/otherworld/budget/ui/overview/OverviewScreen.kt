@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
@@ -159,8 +160,8 @@ fun OverviewContent(
 }
 
 @Composable
-private fun BalancesSection(section: SectionUi<List<AccountGroup>>, onHeaderClick: () -> Unit, onRetry: () -> Unit) {
-    SectionHeader(stringResource(R.string.overview_balances_title), onHeaderClick)
+private fun BalancesSection(section: SectionUi<List<AccountGroup>>, onOpen: () -> Unit, onRetry: () -> Unit) {
+    SectionHeader(stringResource(R.string.overview_balances_title), onOpen)
     SectionBody(section, onRetry) { groups ->
         Column {
             groups.forEach { group ->
@@ -170,16 +171,18 @@ private fun BalancesSection(section: SectionUi<List<AccountGroup>>, onHeaderClic
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
                 )
-                group.accounts.forEach { account -> AccountRow(account) }
+                // Every account opens the same accounts page (spec §2.2) -- there's no per-account
+                // web URL, so the row's tap target and the section header's do the same thing.
+                group.accounts.forEach { account -> AccountRow(account, onOpen) }
             }
         }
     }
 }
 
 @Composable
-private fun AccountRow(account: Account) {
+private fun AccountRow(account: Account, onOpen: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(vertical = 6.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -211,11 +214,11 @@ private fun AccountRow(account: Account) {
 private fun BudgetSection(
     section: SectionUi<BudgetStatus>,
     atRisk: List<BudgetLine>,
-    onHeaderClick: () -> Unit,
+    onOpen: () -> Unit,
     onRetry: () -> Unit,
     onSeeAll: () -> Unit,
 ) {
-    SectionHeader(stringResource(R.string.overview_budget_title), onHeaderClick)
+    SectionHeader(stringResource(R.string.overview_budget_title), onOpen)
     SectionBody(section, onRetry) { budget ->
         Column {
             Text(
@@ -238,7 +241,9 @@ private fun BudgetSection(
                 )
             }
             Spacer(Modifier.height(8.dp))
-            atRisk.forEach { line -> AtRiskRow(line) }
+            // Every category opens the same Budget page (spec §2.2) -- same reasoning as
+            // BalancesSection's rows: no per-category web URL exists, only the section's.
+            atRisk.forEach { line -> AtRiskRow(line, onOpen) }
             TextButton(onClick = onSeeAll) { Text(stringResource(R.string.overview_see_all)) }
         }
     }
@@ -246,10 +251,10 @@ private fun BudgetSection(
 
 /** The compact "closest to running out" row on Overview -- see [BudgetDetailRow] for the full one. */
 @Composable
-internal fun AtRiskRow(line: BudgetLine) {
+internal fun AtRiskRow(line: BudgetLine, onOpen: () -> Unit) {
     val negative = line.remaining.amount.signum() < 0
     val color = if (negative) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+    Column(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(vertical = 4.dp)) {
         Text(line.name, style = MaterialTheme.typography.bodyMedium)
         Text(
             if (negative) {
@@ -269,22 +274,24 @@ internal fun AtRiskRow(line: BudgetLine) {
 }
 
 @Composable
-private fun BillsSection(section: SectionUi<List<BillRow>>, onHeaderClick: () -> Unit, onRetry: () -> Unit) {
-    SectionHeader(stringResource(R.string.overview_bills_title), onHeaderClick)
+private fun BillsSection(section: SectionUi<List<BillRow>>, onOpen: () -> Unit, onRetry: () -> Unit) {
+    SectionHeader(stringResource(R.string.overview_bills_title), onOpen)
     SectionBody(section, onRetry) { rows ->
         if (rows.isEmpty()) {
             Text(stringResource(R.string.overview_bills_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
-            Column { rows.forEach { row -> BillItemRow(row) } }
+            // Every bill opens the same bills page (spec §2.2) -- same reasoning as the other two
+            // sections' rows: no per-bill web URL exists, only the section's.
+            Column { rows.forEach { row -> BillItemRow(row, onOpen) } }
         }
     }
 }
 
 @Composable
-private fun BillItemRow(row: BillRow) {
+private fun BillItemRow(row: BillRow, onOpen: () -> Unit) {
     val overdue = row.label == DueLabel.Overdue
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(vertical = 6.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -322,10 +329,13 @@ private fun SectionHeader(title: String, onClick: () -> Unit) {
 }
 
 /**
- * The three per-section states the brief asks for: data (plus staleness underneath), an error
- * with no data (message + Retry), or a bare refresh with no data yet (a small spinner). An
- * unsupported section with neither data nor error (a part-upgraded server missing just this one
- * route) renders nothing further -- there's nothing wrong to report, just nothing to show yet.
+ * The four per-section states: data (plus staleness underneath), unsupported with no data (a
+ * part-upgraded server that 404s/501s just this one route -- explanatory copy, same idea as
+ * [R.string.overview_update_server] but scoped to one section rather than the whole screen, per
+ * spec §2.5), an error with no data (message + Retry), or a bare refresh with no data yet (a
+ * small spinner). `unsupported` is checked before `error`: [CheckRepository] never sets both at
+ * once for a gated section, but if it ever did, "the server doesn't have this" is the more
+ * durable, specific fact of the two.
  */
 @Composable
 private fun <T> SectionBody(section: SectionUi<T>, onRetry: () -> Unit, content: @Composable (T) -> Unit) {
@@ -341,17 +351,23 @@ private fun <T> SectionBody(section: SectionUi<T>, onRetry: () -> Unit, content:
                     modifier = Modifier.padding(top = 4.dp),
                 )
             }
+        } else if (section.unsupported) {
+            Text(
+                stringResource(R.string.overview_section_unsupported),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         } else if (section.error != null) {
             Text(section.error, color = MaterialTheme.colorScheme.error)
             TextButton(onClick = onRetry) { Text(stringResource(R.string.common_try_again)) }
         } else if (section.refreshing) {
-            CircularProgressIndicator(modifier = Modifier.height(24.dp).padding(vertical = 8.dp))
+            CircularProgressIndicator(modifier = Modifier.padding(vertical = 8.dp).size(24.dp))
         }
     }
 }
 
+/** Shared with [BudgetScreen], which needs the same no-browser guard for its own tappable rows. */
 @Composable
-private fun ErrorBanner(message: String, onDismiss: () -> Unit) {
+internal fun ErrorBanner(message: String, onDismiss: () -> Unit) {
     Surface(color = MaterialTheme.colorScheme.errorContainer) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(start = 16.dp, top = 4.dp, bottom = 4.dp),

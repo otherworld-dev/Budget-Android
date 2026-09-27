@@ -116,6 +116,11 @@ class OverviewViewModelTest {
         assertTrue(viewModel.uiState.value.budget.unsupported)
         assertFalse(viewModel.uiState.value.bills.unsupported)
         assertFalse(viewModel.uiState.value.oldServer)
+        // Neither data nor an error string -- the screen must recognise `unsupported` on its own
+        // to explain this section, not fall through a data/error/refreshing check and render
+        // nothing (review fix round 1, finding 1).
+        assertNull(viewModel.uiState.value.budget.data)
+        assertNull(viewModel.uiState.value.budget.error)
     }
 
     @Test
@@ -127,7 +132,7 @@ class OverviewViewModelTest {
         viewModel.onVisible(); advanceUntilIdle()
 
         assertNull(viewModel.uiState.value.bills.data)
-        assertEquals(strings.get(R.string.activity_error_offline), viewModel.uiState.value.bills.error)
+        assertEquals(strings.get(R.string.overview_error_offline), viewModel.uiState.value.bills.error)
 
         // Once bills has loaded successfully, the exact same kind of failure keeps the cached
         // rows and reports itself as staleness instead of an error string.

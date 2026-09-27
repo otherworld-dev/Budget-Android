@@ -119,6 +119,12 @@
     </plurals>
     <string name="overview_bills_empty">Nothing due in the next 14 days</string>
     <string name="overview_update_server">Update Budget on your server to see balances, budget and bills here</string>
+    <!-- One route 404s/501s (unsupported) while check_available itself is still true: a
+         part-upgraded server, not the fully old one overview_update_server covers, so only the
+         affected section shows this, not the whole screen (spec §2.5). -->
+    <string name="overview_section_unsupported">Update Budget on your server to see this here</string>
+    <string name="overview_error_offline">Couldn\'t reach your Budget server for this.</string>
+    <string name="overview_error_generic">Something went wrong loading this.</string>
 
     <!-- Settings -->
     <string name="settings_account">Account</string>

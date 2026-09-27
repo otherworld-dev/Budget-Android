@@ -129,10 +129,14 @@ class OverviewViewModel @Inject constructor(
         )
     }
 
-    /** Never the raw [Throwable.message] -- always neutral, translated copy. */
+    /**
+     * Never the raw [Throwable.message] -- always neutral, translated copy. Overview's own
+     * strings, not Activity's -- "loading your activity" would be a wrong-screen error on a
+     * screen with no activity list at all (caught in review: this used to reuse Activity's).
+     */
     private fun mapError(e: BudgetApiError): String = when (e) {
-        is BudgetApiError.Network -> strings.get(R.string.activity_error_offline)
-        else -> strings.get(R.string.activity_error_generic)
+        is BudgetApiError.Network -> strings.get(R.string.overview_error_offline)
+        else -> strings.get(R.string.overview_error_generic)
     }
 
     /**

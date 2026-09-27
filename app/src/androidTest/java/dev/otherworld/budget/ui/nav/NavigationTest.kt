@@ -134,8 +134,12 @@ class NavigationTest {
     /**
      * Replaces the old "Recent button" coverage this suite had before Task 7: Recent's top-bar
      * entry point on Capture is gone, and the Activity tab in [dev.otherworld.budget.ui.nav.BudgetBottomBar]
-     * is how the same destination is reached now. Task 9 swaps the placeholder text this test
-     * looks for the real Activity screen; the tab tap itself does not change.
+     * is how the same destination is reached now. Task 9 replaced Activity's placeholder with the
+     * real screen, which has its own top-bar title reading "Activity" too -- the same text the
+     * bottom-bar tab already showed -- so a bare `onNodeWithText("Activity")` after navigating
+     * would find two nodes instead of proving anything. Asserting there are exactly two is the
+     * real-screen anchor instead: the placeholder never had a top bar of its own, so it could
+     * only ever produce one match. The tab tap itself does not change.
      */
     @Test
     fun tappingTheActivityTabNavigatesToActivity() {
@@ -146,10 +150,12 @@ class NavigationTest {
 
             composeRule.onNodeWithText("Activity").performClick()
             composeRule.waitForIdle()
-            composeRule.onNodeWithText("Activity coming soon").assertIsDisplayed()
+            composeRule.onAllNodesWithText("Activity").assertCountEquals(2)
 
             // Activity is one of the three tabs (Task 7's TOP_LEVEL_ROUTES), so the bar itself
-            // stays on screen -- unlike Settings or Quick Add, which replace it entirely.
+            // stays on screen -- unlike Settings or Quick Add, which replace it entirely. Both of
+            // these are still single matches: neither Capture nor Overview is the screen actually
+            // showing, so only their bottom-bar tab labels are on screen.
             composeRule.onNodeWithText("Capture").assertIsDisplayed()
             composeRule.onNodeWithText("Overview").assertIsDisplayed()
         }
@@ -384,13 +390,20 @@ class NavigationTest {
             }
 
             // Capture -> Overview -> Activity -> Capture. Each tap goes through navigateToTab.
+            // "Balances" is Overview's own section heading -- always rendered as long as the
+            // screen isn't in its old-server state, and unique on screen (unlike "Overview"
+            // itself, which the bottom-bar tab also shows), so it stands in for the now-deleted
+            // placeholder text as proof the real screen replaced it.
             composeRule.onNodeWithText("Overview").performClick()
             composeRule.waitForIdle()
-            composeRule.onNodeWithText("Overview coming soon").assertIsDisplayed()
+            composeRule.onNodeWithText("Balances").assertIsDisplayed()
 
+            // Same duplicate-text reasoning as tappingTheActivityTabNavigatesToActivity: the real
+            // ActivityScreen's own top-bar title reads "Activity" too, so two matches is the
+            // signal, not one.
             composeRule.onNodeWithText("Activity").performClick()
             composeRule.waitForIdle()
-            composeRule.onNodeWithText("Activity coming soon").assertIsDisplayed()
+            composeRule.onAllNodesWithText("Activity").assertCountEquals(2)
 
             composeRule.onNodeWithText("Capture").performClick()
             composeRule.waitForIdle()

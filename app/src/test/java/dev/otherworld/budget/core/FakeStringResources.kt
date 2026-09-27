@@ -29,6 +29,8 @@ class FakeStringResources : StringResources {
         R.string.overview_accounts_other to "Other",
         R.string.activity_error_offline to "Couldn't reach your Budget server.",
         R.string.activity_error_generic to "Something went wrong loading your activity.",
+        R.string.overview_error_offline to "Couldn't reach your Budget server for this.",
+        R.string.overview_error_generic to "Something went wrong loading this.",
     )
 
     override fun get(id: Int): String = values[id] ?: "string:$id"
