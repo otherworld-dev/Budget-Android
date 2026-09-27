@@ -10,6 +10,7 @@ import dev.otherworld.budget.data.repo.ExtractOutcome
 import dev.otherworld.budget.data.repo.PendingReceipt
 import dev.otherworld.budget.data.repo.ReceiptQueue
 import dev.otherworld.budget.data.repo.ReceiptRepository
+import dev.otherworld.budget.data.repo.TestSnapshots
 import dev.otherworld.budget.domain.model.CaptureState
 import dev.otherworld.budget.domain.model.DraftTransaction
 import dev.otherworld.budget.ui.review.FakeLastAccount
@@ -41,7 +42,7 @@ class QuickAddViewModelTest {
         lastAccountId: Long? = null,
     ) = QuickAddViewModel(
         queue = queue,
-        catalog = CatalogRepository(api),
+        catalog = CatalogRepository(api, TestSnapshots.fake()),
         lastAccount = FakeLastAccount(lastAccountId),
         strings = FakeStringResources(),
         clock = { today },
@@ -157,7 +158,7 @@ class QuickAddViewModelTest {
     fun `a successful save remembers the account for next time`() = runTest(dispatcher) {
         val lastAccount = FakeLastAccount(null)
         val queue = FakeQuickAddQueue()
-        val vm = QuickAddViewModel(queue, CatalogRepository(FakeBudgetApi()), lastAccount, FakeStringResources()) { today }
+        val vm = QuickAddViewModel(queue, CatalogRepository(FakeBudgetApi(), TestSnapshots.fake()), lastAccount, FakeStringResources()) { today }
         advanceUntilIdle()
 
         vm.onAmountChanged("5.00")

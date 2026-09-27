@@ -75,6 +75,15 @@ interface AuthExpiry {
  * and by the time [onUnauthorized] runs the singleton it resolves is the same instance every
  * screen reads from. [FallbackCurrencyCache] is per-server state for the same reason the
  * catalog is, and goes with it.
+ *
+ * [catalog]'s `invalidate()` only drops the in-memory values, never the persisted snapshots --
+ * deliberately, since this runs from a non-suspending failure handler on the request path and
+ * must not block it. It does not need to: [store]`.clear()` above already removes the
+ * credentials, and [dev.otherworld.budget.data.repo.SnapshotStore] scopes every read by whoever
+ * is signed in *now*, so the persisted rows become unreadable the instant those credentials are
+ * gone, with no separate deletion required. They stay on disk, orphaned, until the next sign-in
+ * resolves them: [SessionManager.signIn] clears them outright when the server differs, or leaves
+ * them -- legitimately the same owner's -- when it is the same server and user.
  */
 @Singleton
 class CredentialExpiry @Inject constructor(

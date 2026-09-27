@@ -12,6 +12,7 @@ import dev.otherworld.budget.data.repo.ExtractOutcome
 import dev.otherworld.budget.data.repo.PendingReceipt
 import dev.otherworld.budget.data.repo.ReceiptQueue
 import dev.otherworld.budget.data.repo.ReceiptRepository
+import dev.otherworld.budget.data.repo.TestSnapshots
 import dev.otherworld.budget.domain.model.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -132,7 +133,7 @@ class ReviewViewModelTest {
     ) = ReviewViewModel(
         savedStateHandle = SavedStateHandle(mapOf("receiptId" to pending.id)),
         queue = queue,
-        catalog = CatalogRepository(api),
+        catalog = CatalogRepository(api, TestSnapshots.fake()),
         lastAccount = FakeLastAccount(lastAccountId),
         strings = FakeStringResources(),
         clock = { today },
@@ -666,7 +667,7 @@ class ReviewViewModelTest {
         val vm = ReviewViewModel(
             savedStateHandle = SavedStateHandle(mapOf("receiptId" to 999L)),   // no such row
             queue = queue,
-            catalog = CatalogRepository(FakeBudgetApi()),
+            catalog = CatalogRepository(FakeBudgetApi(), TestSnapshots.fake()),
             lastAccount = FakeLastAccount(null),
             strings = FakeStringResources(),
             clock = { today },

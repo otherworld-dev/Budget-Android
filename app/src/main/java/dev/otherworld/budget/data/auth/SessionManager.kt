@@ -47,8 +47,9 @@ class SessionManager @Inject constructor(
      * that was. When it differs, everything keyed to the old server is reconciled: FAILED rows
      * are demoted to mandatory review with their foreign account/category ids scrubbed
      * ([ReceiptQueue.parkFailedForServerChange]), the remembered default account is forgotten,
-     * and the catalog and fallback-currency caches are dropped so nothing from the old server
-     * is offered against the new one.
+     * and the catalog (memory *and* its persisted snapshots -- [CatalogRepository.clearPersisted])
+     * and fallback-currency caches are dropped so nothing from the old server is offered against
+     * the new one.
      *
      * NonCancellable: this runs in the onboarding screen's coroutine scope, and a rotation or
      * back-press mid-save must not leave credentials stored but the old server's FAILED rows
@@ -70,7 +71,7 @@ class SessionManager @Inject constructor(
         if (previousServer != null && previousServer != credentials.server) {
             queue.parkFailedForServerChange()
             lastAccount.clear()
-            catalog.invalidate()
+            catalog.clearPersisted()
             currencyCache.clear()
             // The old server's brand colour must not persist into the new session: revert to the
             // default now, so the new server's colour is fetched clean (onboarding calls refresh()
@@ -114,7 +115,7 @@ class SessionManager @Inject constructor(
 
         scheduler.cancelAll()
         queue.clearAll()          // deletes rows and their photos
-        catalog.invalidate()
+        catalog.clearPersisted()
         lastAccount.clear()       // an account id belonging to the server we're leaving
         currencyCache.clear()     // ...and its currency; the next server states its own
         theme.clear()             // ...and its brand colour; signed out returns to the default

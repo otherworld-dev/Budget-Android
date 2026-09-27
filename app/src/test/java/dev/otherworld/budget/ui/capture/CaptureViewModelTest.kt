@@ -8,6 +8,7 @@ import dev.otherworld.budget.data.repo.CatalogRepository
 import dev.otherworld.budget.data.repo.ExtractOutcome
 import dev.otherworld.budget.data.repo.PendingReceipt
 import dev.otherworld.budget.data.repo.ReceiptQueue
+import dev.otherworld.budget.data.repo.TestSnapshots
 import dev.otherworld.budget.data.work.QueueScheduling
 import dev.otherworld.budget.domain.model.Account
 import dev.otherworld.budget.domain.model.CaptureState
@@ -37,7 +38,7 @@ class CaptureViewModelTest {
     @Test
     fun `reports OCR unavailable when the server says so`() = runTest(dispatcher) {
         val api = FakeBudgetApi().apply { ocrAvailable = false }
-        val vm = CaptureViewModel(CatalogRepository(api), FakeQueue(), FakeScheduler())
+        val vm = CaptureViewModel(CatalogRepository(api, TestSnapshots.fake()), FakeQueue(), FakeScheduler())
         advanceUntilIdle()
 
         assertFalse(vm.uiState.value.ocrAvailable)
@@ -47,7 +48,7 @@ class CaptureViewModelTest {
     @Test
     fun `reports the no-accounts state and does not offer setup`() = runTest(dispatcher) {
         val api = FakeBudgetApi().apply { accountsResult = emptyList<Account>() }
-        val vm = CaptureViewModel(CatalogRepository(api), FakeQueue(), FakeScheduler())
+        val vm = CaptureViewModel(CatalogRepository(api, TestSnapshots.fake()), FakeQueue(), FakeScheduler())
         advanceUntilIdle()
 
         assertFalse(vm.uiState.value.hasAccounts)
@@ -62,7 +63,7 @@ class CaptureViewModelTest {
         // first launch made offline told the user to "add an account in Budget on Nextcloud" --
         // sending them to look for a problem they do not have.
         val api = FakeBudgetApi().apply { nextError = BudgetApiError.Network(null) }
-        val vm = CaptureViewModel(CatalogRepository(api), FakeQueue(), FakeScheduler())
+        val vm = CaptureViewModel(CatalogRepository(api, TestSnapshots.fake()), FakeQueue(), FakeScheduler())
         advanceUntilIdle()
 
         assertFalse(vm.uiState.value.hasAccounts)
@@ -75,7 +76,7 @@ class CaptureViewModelTest {
         // re-run (from the retry affordance, or on resume) this message was permanent for the
         // life of the process.
         val api = FakeBudgetApi().apply { nextError = BudgetApiError.Network(null) }
-        val vm = CaptureViewModel(CatalogRepository(api), FakeQueue(), FakeScheduler())
+        val vm = CaptureViewModel(CatalogRepository(api, TestSnapshots.fake()), FakeQueue(), FakeScheduler())
         advanceUntilIdle()
         assertEquals(CaptureMessage.Offline, vm.uiState.value.message)
 
@@ -88,7 +89,7 @@ class CaptureViewModelTest {
 
     @Test
     fun `a failed capture is reported instead of vanishing`() = runTest(dispatcher) {
-        val vm = CaptureViewModel(CatalogRepository(FakeBudgetApi()), FakeQueue(), FakeScheduler())
+        val vm = CaptureViewModel(CatalogRepository(FakeBudgetApi(), TestSnapshots.fake()), FakeQueue(), FakeScheduler())
         advanceUntilIdle()
 
         vm.onCaptureFailed()
@@ -99,7 +100,7 @@ class CaptureViewModelTest {
     @Test
     fun `a capture that works clears the failure message`() = runTest(dispatcher) {
         val queue = FakeQueue()
-        val vm = CaptureViewModel(CatalogRepository(FakeBudgetApi()), queue, FakeScheduler())
+        val vm = CaptureViewModel(CatalogRepository(FakeBudgetApi(), TestSnapshots.fake()), queue, FakeScheduler())
         advanceUntilIdle()
         vm.onCaptureFailed()
 
@@ -123,7 +124,7 @@ class CaptureViewModelTest {
         )
         queue.setAwaitingReview(listOf(pendingReceipt(id = 2L, state = CaptureState.AWAITING_REVIEW)))
 
-        val vm = CaptureViewModel(CatalogRepository(FakeBudgetApi()), queue, FakeScheduler())
+        val vm = CaptureViewModel(CatalogRepository(FakeBudgetApi(), TestSnapshots.fake()), queue, FakeScheduler())
         advanceUntilIdle()
 
         assertEquals(1, vm.uiState.value.pendingCount)
@@ -134,7 +135,7 @@ class CaptureViewModelTest {
     fun `capture is still allowed when OCR is unavailable so manual entry works`() = runTest(dispatcher) {
         val api = FakeBudgetApi().apply { ocrAvailable = false }
         val queue = FakeQueue()
-        val vm = CaptureViewModel(CatalogRepository(api), queue, FakeScheduler())
+        val vm = CaptureViewModel(CatalogRepository(api, TestSnapshots.fake()), queue, FakeScheduler())
         advanceUntilIdle()
 
         vm.onPhotoCaptured(java.io.File("receipt.jpg"))
@@ -147,7 +148,7 @@ class CaptureViewModelTest {
     fun `capturing enqueues the photo and schedules extraction`() = runTest(dispatcher) {
         val queue = FakeQueue()
         val scheduler = FakeScheduler()
-        val vm = CaptureViewModel(CatalogRepository(FakeBudgetApi()), queue, scheduler)
+        val vm = CaptureViewModel(CatalogRepository(FakeBudgetApi(), TestSnapshots.fake()), queue, scheduler)
         advanceUntilIdle()
 
         vm.onPhotoCaptured(java.io.File("receipt.jpg"))
@@ -165,7 +166,7 @@ class CaptureViewModelTest {
         // not assume/re-derive it from id.
         queue.setAwaitingReview(listOf(pendingReceipt(id = 7L), pendingReceipt(id = 3L)))
 
-        val vm = CaptureViewModel(CatalogRepository(FakeBudgetApi()), queue, FakeScheduler())
+        val vm = CaptureViewModel(CatalogRepository(FakeBudgetApi(), TestSnapshots.fake()), queue, FakeScheduler())
         advanceUntilIdle()
 
         assertEquals(2, vm.uiState.value.awaitingReviewCount)
@@ -174,7 +175,7 @@ class CaptureViewModelTest {
 
     @Test
     fun `reports no awaiting review when the queue has nothing to review`() = runTest(dispatcher) {
-        val vm = CaptureViewModel(CatalogRepository(FakeBudgetApi()), FakeQueue(), FakeScheduler())
+        val vm = CaptureViewModel(CatalogRepository(FakeBudgetApi(), TestSnapshots.fake()), FakeQueue(), FakeScheduler())
         advanceUntilIdle()
 
         assertEquals(0, vm.uiState.value.awaitingReviewCount)

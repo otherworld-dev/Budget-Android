@@ -1,8 +1,10 @@
 package dev.otherworld.budget.data.auth
 
+import dev.otherworld.budget.RobolectricTestApplication
 import dev.otherworld.budget.data.remote.FallbackCurrencyCache
 import dev.otherworld.budget.data.remote.fake.FakeBudgetApi
 import dev.otherworld.budget.data.repo.CatalogRepository
+import dev.otherworld.budget.data.repo.TestSnapshots
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -12,15 +14,24 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import javax.inject.Provider
 
-/** Pure JVM: nothing here touches an Android API. */
+/**
+ * Robolectric, not pure JVM: [CatalogRepository] now persists through a Room-backed
+ * [dev.otherworld.budget.data.repo.SnapshotStore] (see [TestSnapshots.inMemory]), which needs a
+ * Context to open even for its in-memory driver.
+ */
 @OptIn(ExperimentalCoroutinesApi::class)
+@Config(sdk = [35], application = RobolectricTestApplication::class)
+@RunWith(RobolectricTestRunner::class)
 class CredentialExpiryTest {
 
     private val api = FakeBudgetApi()
-    private val catalog = CatalogRepository(api)
     private val store = InMemoryCredentialStore(Credentials("https://cloud.example", "adam", "pw"))
+    private val catalog = CatalogRepository(api, TestSnapshots.inMemory(store))
     private val currencyCache = FallbackCurrencyCache()
     private val expiry = CredentialExpiry(store, Provider { catalog }, currencyCache)
 

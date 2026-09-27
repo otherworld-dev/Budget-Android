@@ -1,15 +1,10 @@
 package dev.otherworld.budget.data.repo
 
-import androidx.room.Room
-import androidx.test.core.app.ApplicationProvider
 import dev.otherworld.budget.RobolectricTestApplication
 import dev.otherworld.budget.data.auth.Credentials
 import dev.otherworld.budget.data.auth.InMemoryCredentialStore
-import dev.otherworld.budget.data.local.AppDatabase
-import dev.otherworld.budget.data.local.SnapshotDao
 import dev.otherworld.budget.data.local.SnapshotKind
 import kotlinx.coroutines.test.runTest
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Before
@@ -23,25 +18,17 @@ import java.time.Instant
 @RunWith(RobolectricTestRunner::class)
 class SnapshotStoreTest {
 
-    private lateinit var db: AppDatabase
-    private lateinit var dao: SnapshotDao
     private val credentialStore = InMemoryCredentialStore()
     private var clockValue = Instant.parse("2026-09-27T10:00:00Z")
 
-    private fun store() = SnapshotStore(dao, credentialStore, now = { clockValue })
+    private fun store() = TestSnapshots.inMemory(credentialStore, now = { clockValue })
 
     private val alice = Credentials(server = "https://a.example", loginName = "alice", appPassword = "x")
     private val bob = Credentials(server = "https://b.example", loginName = "bob", appPassword = "y")
 
     @Before fun setUp() {
-        db = Room.inMemoryDatabaseBuilder(
-            ApplicationProvider.getApplicationContext(), AppDatabase::class.java
-        ).allowMainThreadQueries().build()
-        dao = db.snapshots()
         credentialStore.save(alice)
     }
-
-    @After fun tearDown() = db.close()
 
     @Test
     fun `read returns what write stored with fetchedAt from the clock`() = runTest {

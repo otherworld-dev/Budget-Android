@@ -9,16 +9,23 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.lifecycle.SavedStateHandle
+import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import dev.otherworld.budget.core.AndroidStringResources
 import dev.otherworld.budget.data.prefs.LastAccountStore
 import dev.otherworld.budget.data.remote.CreateTransactionRequest
 import dev.otherworld.budget.data.remote.CreatedTransaction
+import dev.otherworld.budget.data.auth.Credentials
+import dev.otherworld.budget.data.auth.InMemoryCredentialStore
+import dev.otherworld.budget.data.local.SnapshotDao
+import dev.otherworld.budget.data.local.SnapshotEntity
 import dev.otherworld.budget.data.remote.fake.FakeBudgetApi
 import dev.otherworld.budget.data.repo.CatalogRepository
 import dev.otherworld.budget.data.repo.ExtractOutcome
 import dev.otherworld.budget.data.repo.PendingReceipt
 import dev.otherworld.budget.data.repo.ReceiptQueue
 import dev.otherworld.budget.data.repo.ReceiptRepository
+import dev.otherworld.budget.data.repo.SnapshotStore
 import dev.otherworld.budget.domain.model.CaptureState
 import dev.otherworld.budget.domain.model.DraftTransaction
 import dev.otherworld.budget.domain.model.LineItem
@@ -29,6 +36,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 import java.math.BigDecimal
+import java.time.Instant
 import java.time.LocalDate
 
 /**
@@ -61,8 +69,11 @@ class ReviewScreenTest {
     private fun viewModel(lastError: String? = null) = ReviewViewModel(
         savedStateHandle = SavedStateHandle(mapOf("receiptId" to 1L)),
         queue = FakeQueue(pending(lastError)),
-        catalog = CatalogRepository(FakeBudgetApi()),
+        catalog = CatalogRepository(FakeBudgetApi(), fakeSnapshotStore()),
         lastAccount = FakeLastAccount(),
+        // Real resources, not a fake: this test asserts on rendered text ("Total", "Save"), so
+        // it needs the actual strings.xml values, not a stand-in.
+        strings = AndroidStringResources(ApplicationProvider.getApplicationContext()),
         clock = { LocalDate.of(2026, 3, 20) },
     )
 
@@ -114,6 +125,25 @@ class ReviewScreenTest {
         composeRule.onNodeWithText(ReceiptRepository.INTERRUPTED_POST_MESSAGE).assertIsDisplayed()
     }
 }
+
+/**
+ * A [CatalogRepository] needs a [SnapshotStore] to satisfy its constructor, but this screen has
+ * no interest in persistence -- so a hand-rolled in-memory [SnapshotDao], not Room, duplicated
+ * here rather than shared across source sets (test and androidTest cannot see each other's
+ * classes; see [FakeQueue] below), matching this project's per-test-file fake convention.
+ */
+private class FakeSnapshotDao : SnapshotDao {
+    private val rows = mutableMapOf<String, SnapshotEntity>()
+    override suspend fun get(kind: String): SnapshotEntity? = rows[kind]
+    override suspend fun put(entity: SnapshotEntity) { rows[entity.kind] = entity }
+    override suspend fun clear() { rows.clear() }
+}
+
+private fun fakeSnapshotStore() = SnapshotStore(
+    FakeSnapshotDao(),
+    InMemoryCredentialStore(Credentials("https://cloud.example", "adam", "pw")),
+    now = { Instant.now() },
+)
 
 /**
  * Hand-rolled fake -- same pattern as ReviewViewModelTest's FakeReviewQueue, duplicated here

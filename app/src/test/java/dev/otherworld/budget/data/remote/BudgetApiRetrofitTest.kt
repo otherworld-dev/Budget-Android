@@ -1,9 +1,11 @@
 package dev.otherworld.budget.data.remote
 
+import dev.otherworld.budget.RobolectricTestApplication
 import dev.otherworld.budget.data.auth.Credentials
 import dev.otherworld.budget.data.auth.InMemoryCredentialStore
 import dev.otherworld.budget.data.remote.fake.FakeBudgetApi
 import dev.otherworld.budget.data.repo.CatalogRepository
+import dev.otherworld.budget.data.repo.TestSnapshots
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -19,6 +21,9 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import dev.otherworld.budget.domain.model.Direction
 import dev.otherworld.budget.domain.model.Money
 import dev.otherworld.budget.domain.model.TransferLink
@@ -26,6 +31,13 @@ import java.io.File
 import java.math.BigDecimal
 import java.time.LocalDate
 
+/**
+ * Robolectric, not pure JVM: [TestApiFactory.create]'s default [CatalogRepository] now persists
+ * through a Room-backed [dev.otherworld.budget.data.repo.SnapshotStore] (see
+ * [TestSnapshots.inMemory]), which needs a Context to open even for its in-memory driver.
+ */
+@Config(sdk = [35], application = RobolectricTestApplication::class)
+@RunWith(RobolectricTestRunner::class)
 class BudgetApiRetrofitTest {
 
     private lateinit var server: MockWebServer
@@ -144,7 +156,7 @@ class BudgetApiRetrofitTest {
         // accounts and OCR banner it fetched before the password was revoked -- a healthy screen
         // over a queue that cannot drain.
         val cached = FakeBudgetApi()
-        val catalog = CatalogRepository(cached)
+        val catalog = CatalogRepository(cached, TestSnapshots.fake())
         val api = TestApiFactory.create(store, catalog)
         catalog.accounts()                          // populates the cache
 
