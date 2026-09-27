@@ -36,10 +36,13 @@ object TestSnapshots {
      * `CatalogRepository(api, ...)` call sites (view-model tests, mostly) that need *a* working
      * store to satisfy the constructor but have no interest in persistence themselves, and so
      * have no reason to need a Robolectric context.
+     *
+     * [credentials] and [now] default to a fixed signed-in owner and the wall clock; a test that
+     * reasons about `fetchedAt` (e.g. [CheckRepositoryTest]'s staleness window) passes its own
+     * clock so the stored timestamps move only when the test moves them.
      */
-    fun fake(): SnapshotStore = SnapshotStore(
-        FakeSnapshotDao(),
-        InMemoryCredentialStore(Credentials("https://cloud.example", "adam", "pw")),
-        now = { Instant.now() },
-    )
+    fun fake(
+        credentials: CredentialStore = InMemoryCredentialStore(Credentials("https://cloud.example", "adam", "pw")),
+        now: () -> Instant = { Instant.now() },
+    ): SnapshotStore = SnapshotStore(FakeSnapshotDao(), credentials, now)
 }

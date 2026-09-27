@@ -35,6 +35,11 @@ class FakeBudgetApi(
      * older API would.
      */
     var unsupportedCheckRoutes: Boolean = false,
+    /**
+     * Fails [upcomingBills] alone with a [BudgetApiError.Network], leaving every other route
+     * answering -- the per-section failure case [nextError] cannot reach, since it fails them all.
+     */
+    var failBills: Boolean = false,
 ) : BudgetApi {
 
     /** One entry per *distinct* transaction created -- a replay of a seen key adds nothing here. */
@@ -137,6 +142,7 @@ class FakeBudgetApi(
     override suspend fun upcomingBills(days: Int): Result<List<UpcomingBill>> {
         billsCalls++
         if (unsupportedCheckRoutes) return Result.failure(BudgetApiError.ServerError(404))
+        if (failBills) return Result.failure(BudgetApiError.Network(null))
         return respond { billsResult }
     }
 

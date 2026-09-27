@@ -11,6 +11,7 @@ import dev.otherworld.budget.data.remote.CreatedTransaction
 import dev.otherworld.budget.data.remote.TestApiFactory
 import dev.otherworld.budget.data.remote.fake.FakeBudgetApi
 import dev.otherworld.budget.data.repo.CatalogRepository
+import dev.otherworld.budget.data.repo.CheckRepository
 import dev.otherworld.budget.data.repo.ExtractOutcome
 import dev.otherworld.budget.data.prefs.LastServerStore
 import dev.otherworld.budget.data.repo.PendingReceipt
@@ -66,6 +67,7 @@ class SessionManagerTest {
      */
     private lateinit var dao: SnapshotDao
     private lateinit var catalog: CatalogRepository
+    private lateinit var check: CheckRepository
 
     @Before fun setUp() {
         server = MockWebServer().also { it.start() }
@@ -91,12 +93,16 @@ class SessionManagerTest {
             ApplicationProvider.getApplicationContext(), AppDatabase::class.java
         ).allowMainThreadQueries().build()
         dao = db.snapshots()
-        catalog = CatalogRepository(FakeBudgetApi(), SnapshotStore(dao, store, now = { Instant.now() }))
+        val snapshots = SnapshotStore(dao, store, now = { Instant.now() })
+        val api = FakeBudgetApi()
+        catalog = CatalogRepository(api, snapshots)
+        check = CheckRepository(api, catalog, snapshots, now = { Instant.now() })
         return SessionManager(
             store = store,
             service = TestApiFactory.service(store),
             queue = queue,
             catalog = catalog,
+            check = check,
             scheduler = scheduler,
             lastAccount = lastAccount,
             lastServer = lastServer,
@@ -177,17 +183,21 @@ class SessionManagerTest {
     }
 
     @Test
-    fun `sign out clears persisted snapshots`() = runTest {
+    fun `sign out clears persisted snapshots and the check sections`() = runTest {
         server.enqueue(MockResponse().setResponseCode(200))
         val manager = sessionManager(server.url("/").toString().trimEnd('/'))
-        catalog.accounts()   // fetches and persists the ACCOUNTS snapshot
+        check.refresh()      // fetches and persists every check kind, ACCOUNTS via the catalog
         // dao.get, not catalog.accountsFetchedAt(): the row must actually be gone, not merely
         // hidden by store no longer holding the owner it was written for.
         assertNotNull(dao.get(SnapshotKind.ACCOUNTS.name))
+        assertNotNull(check.recent.value.data)
 
         manager.signOut()
 
         assertNull(dao.get(SnapshotKind.ACCOUNTS.name))
+        assertNull(dao.get(SnapshotKind.RECENT.name))
+        assertNull(check.recent.value.data)
+        assertNull(check.balances.value.data)
     }
 
     // --- signIn: reconciling a queue that outlived its server -------------------------------
@@ -287,16 +297,19 @@ class SessionManagerTest {
     }
 
     @Test
-    fun `sign-in to a different server clears persisted snapshots`() = runTest {
+    fun `sign-in to a different server clears persisted snapshots and the check sections`() = runTest {
         val manager = sessionManager("https://old.example")
         lastServer.set("https://old.example")
-        catalog.accounts()   // persists a snapshot under the old server, while its credentials are still valid
+        check.refresh()      // persists snapshots under the old server, while its credentials are still valid
         assertNotNull(dao.get(SnapshotKind.ACCOUNTS.name))
+        assertNotNull(check.budget.value.data)
         store.clear()   // e.g. a credential expiry wiped the password but not the queue or the snapshot
 
         manager.signIn(Credentials("https://work.example", "adam", "pw"))
 
         assertNull(dao.get(SnapshotKind.ACCOUNTS.name))
+        assertNull(dao.get(SnapshotKind.BUDGET_STATUS.name))
+        assertNull(check.budget.value.data)
     }
 }
 
