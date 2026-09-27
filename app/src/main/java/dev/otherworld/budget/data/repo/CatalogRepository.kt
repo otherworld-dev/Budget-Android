@@ -147,6 +147,14 @@ class CatalogRepository @Inject constructor(
         )
     }
 
+    /**
+     * True when the accounts held in memory are the persisted snapshot standing in for a failed
+     * fetch rather than a network answer -- so a caller can serve them (Review and Quick Add
+     * still need something to post against offline) while still telling the user the server
+     * could not be reached, which Capture's offline notice exists to do.
+     */
+    fun accountsAreFallback(): Boolean = synchronized(stateLock) { accounts.value != null && !accounts.fresh }
+
     /** fetchedAt of the persisted accounts snapshot, for Overview's staleness line. */
     suspend fun accountsFetchedAt(): Instant? =
         snapshots.read(SnapshotKind.ACCOUNTS, SnapshotCodec::decodeAccounts)?.fetchedAt

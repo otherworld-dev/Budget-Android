@@ -91,17 +91,24 @@ class CaptureViewModel @Inject constructor(
      * A *failed* catalog fetch and an empty account list are different answers and are reported
      * differently; `null` from [Result.getOrNull] is exactly the distinction the old code threw
      * away with `.orEmpty()`.
+     *
+     * So is a fetch that failed but was answered from the catalog's persisted snapshot
+     * ([CatalogRepository.accountsAreFallback]): the accounts are real enough to capture against,
+     * so [CaptureUiState.hasAccounts] follows them, but the server was still unreachable and the
+     * notice says so. A cached empty list is not proof the server has no accounts either, so that
+     * reads as offline too.
      */
     fun refresh() = viewModelScope.launch {
         val ocr = catalog.capabilities().getOrNull()?.ocrAvailable ?: false
         val accounts = catalog.accounts().getOrNull()
+        val offline = accounts == null || catalog.accountsAreFallback()
         _uiState.update {
             it.copy(
                 loading = false,
                 ocrAvailable = ocr,
                 hasAccounts = !accounts.isNullOrEmpty(),
                 message = when {
-                    accounts == null -> CaptureMessage.Offline
+                    offline -> CaptureMessage.Offline
                     accounts.isEmpty() -> CaptureMessage.NoAccounts
                     !ocr -> CaptureMessage.OcrUnavailable
                     else -> null

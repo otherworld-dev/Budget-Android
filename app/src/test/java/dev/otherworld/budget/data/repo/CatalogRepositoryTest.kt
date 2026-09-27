@@ -12,6 +12,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -106,6 +107,23 @@ class CatalogRepositoryTest {
         // One failed call while offline, one successful call once connectivity returned -- proves
         // this hit the network again rather than being served straight out of memory.
         assertEquals(2, api.accountCalls)
+    }
+
+    @Test
+    fun `accountsAreFallback tells a snapshot answer from a network one`() = runTest {
+        val snapshots = TestSnapshots.inMemory(alice)
+        CatalogRepository(FakeBudgetApi(), snapshots).accounts()   // seeds a persisted snapshot
+
+        val api = FakeBudgetApi(nextError = BudgetApiError.Network(null))
+        val repo = CatalogRepository(api, snapshots)
+        assertFalse(repo.accountsAreFallback())   // nothing answered yet
+
+        repo.accounts()
+        assertTrue(repo.accountsAreFallback())
+
+        api.nextError = null
+        repo.accounts()
+        assertFalse(repo.accountsAreFallback())
     }
 
     @Test

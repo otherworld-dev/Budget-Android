@@ -3,7 +3,10 @@ package dev.otherworld.budget.ui.capture
 import dev.otherworld.budget.data.remote.BudgetApiError
 import dev.otherworld.budget.data.remote.CreateTransactionRequest
 import dev.otherworld.budget.data.remote.CreatedTransaction
+import dev.otherworld.budget.data.local.SnapshotCodec
+import dev.otherworld.budget.data.local.SnapshotKind
 import dev.otherworld.budget.data.remote.fake.FakeBudgetApi
+import dev.otherworld.budget.data.remote.fake.FakeCheckData
 import dev.otherworld.budget.data.repo.CatalogRepository
 import dev.otherworld.budget.data.repo.ExtractOutcome
 import dev.otherworld.budget.data.repo.PendingReceipt
@@ -67,6 +70,21 @@ class CaptureViewModelTest {
         advanceUntilIdle()
 
         assertFalse(vm.uiState.value.hasAccounts)
+        assertEquals(CaptureMessage.Offline, vm.uiState.value.message)
+    }
+
+    @Test
+    fun `offline with cached accounts still says so`() = runTest(dispatcher) {
+        // The catalog now answers from its persisted snapshot when the network fails, which is
+        // what keeps Review and Quick Add usable offline -- but Capture must still tell the user
+        // the server can't be reached, rather than looking as healthy as when it can.
+        val snapshots = TestSnapshots.fake()
+        snapshots.write(SnapshotKind.ACCOUNTS, SnapshotCodec.encodeAccounts(FakeCheckData.accounts), snapshots.currentOwner())
+        val api = FakeBudgetApi().apply { nextError = BudgetApiError.Network(null) }
+        val vm = CaptureViewModel(CatalogRepository(api, snapshots), FakeQueue(), FakeScheduler())
+        advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.hasAccounts)
         assertEquals(CaptureMessage.Offline, vm.uiState.value.message)
     }
 
