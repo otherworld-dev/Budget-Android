@@ -118,4 +118,12 @@ class FakeBudgetApi(
             CreatedTransaction(id, splitsError)
         }
     }
+
+    // Stubs only -- just enough for the app to compile against the widened BudgetApi contract.
+    // Task 2 gives these real, controllable behaviour.
+    override suspend fun budgetStatus(month: String?) = respond<BudgetStatus> { error("not yet") }
+
+    override suspend fun upcomingBills(days: Int) = respond<List<UpcomingBill>> { error("not yet") }
+
+    override suspend fun transactionSplits(id: Long) = respond<List<SplitLine>> { error("not yet") }
 }

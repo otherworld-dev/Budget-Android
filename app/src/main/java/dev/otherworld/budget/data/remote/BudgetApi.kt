@@ -1,15 +1,26 @@
 package dev.otherworld.budget.data.remote
 
 import dev.otherworld.budget.domain.model.Account
+import dev.otherworld.budget.domain.model.BudgetStatus
 import dev.otherworld.budget.domain.model.Category
 import dev.otherworld.budget.domain.model.DraftTransaction
 import dev.otherworld.budget.domain.model.Money
 import dev.otherworld.budget.domain.model.RecentTransaction
+import dev.otherworld.budget.domain.model.SplitLine
 import dev.otherworld.budget.domain.model.SplitPart
+import dev.otherworld.budget.domain.model.UpcomingBill
 import java.io.File
 import java.time.LocalDate
 
-data class Capabilities(val ocrAvailable: Boolean, val currency: String, val version: String, val splitsAvailable: Boolean)
+data class Capabilities(
+    val ocrAvailable: Boolean,
+    val currency: String,
+    val version: String,
+    val splitsAvailable: Boolean,
+    // Absent (false) on an older server: the check side (balances, budget, bills) isn't
+    // available there, and the Overview tab shows its "update your server" state instead.
+    val checkAvailable: Boolean = false,
+)
 
 /**
  * The outcome of a successful [BudgetApi.createTransaction]: the new transaction's [id], plus
@@ -61,4 +72,13 @@ interface BudgetApi {
      * characters -- a UUID is 36 -- or the server answers 400.
      */
     suspend fun createTransaction(request: CreateTransactionRequest, idempotencyKey: String): Result<CreatedTransaction>
+
+    /** `month` null lets the server pick the user's current budget month (spec §1.2). */
+    suspend fun budgetStatus(month: String? = null): Result<BudgetStatus>
+
+    /** [days] defaults to 14, matching the server's own default and clamp (spec §1.3). */
+    suspend fun upcomingBills(days: Int = 14): Result<List<UpcomingBill>>
+
+    /** The per-item parts of one transaction (spec §1.1), for a row whose `is_split` is true. */
+    suspend fun transactionSplits(id: Long): Result<List<SplitLine>>
 }

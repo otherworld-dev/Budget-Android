@@ -80,7 +80,10 @@ class BudgetApiRetrofit @Inject constructor(
 
     override suspend fun capabilities() = call({ service.capabilities() }) { dto ->
         fallbackCurrency.value = dto.currency
-        Capabilities(dto.ocrAvailable, dto.currency, dto.version, splitsAvailable = dto.splitsAvailable)
+        Capabilities(
+            dto.ocrAvailable, dto.currency, dto.version,
+            splitsAvailable = dto.splitsAvailable, checkAvailable = dto.checkAvailable,
+        )
     }
 
     override suspend fun accounts() = call({ service.accounts() }) { it.map(AccountDto::toDomain) }
@@ -130,6 +133,23 @@ class BudgetApiRetrofit @Inject constructor(
             throw BudgetApiError.ServerError(0)
         }
         CreatedTransaction(dto.id, dto.splitsError)
+    }
+
+    override suspend fun budgetStatus(month: String?) = call({ service.budgetStatus(month) }) { dto ->
+        // A null here means the dates or totals didn't parse -- the same malformed-body outcome
+        // every other endpoint reports as ServerError(0), rather than a half-populated status.
+        dto.toDomain() ?: throw BudgetApiError.ServerError(0)
+    }
+
+    override suspend fun upcomingBills(days: Int) =
+        call({ service.upcomingBills(days) }) { dto -> dto.bills.mapNotNull { it.toDomain() } }
+
+    override suspend fun transactionSplits(id: Long) = call({ service.transactionSplits(id) }) { dto ->
+        // SplitDto carries no currency of its own (spec §1.1's split shape), so it resolves the
+        // same way extract() does: the cached fallback first, one capabilities() round trip only
+        // if nothing has populated it yet this session.
+        val currency = fallbackCurrency.value ?: capabilities().getOrElse { throw it }.currency
+        dto.splits.mapNotNull { it.toDomain(currency) }
     }
 
     private fun String.text(): RequestBody = toRequestBody(PLAIN)

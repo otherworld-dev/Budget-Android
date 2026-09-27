@@ -11,6 +11,9 @@ import java.time.LocalDate
     val version: String,
     // Absent on older servers; absence means the server does not accept splits.
     @SerialName("splits_available") val splitsAvailable: Boolean = false,
+    // Absent on older servers; absence means the check side (balances, budget, bills) isn't
+    // available and the Overview tab shows its "update your server" state instead.
+    @SerialName("check_available") val checkAvailable: Boolean = false,
 )
 
 /**
@@ -25,8 +28,31 @@ import java.time.LocalDate
 @Serializable data class CoreCapabilities(val theming: ThemingDto? = null)
 @Serializable data class ThemingDto(val color: String? = null)
 
-@Serializable data class AccountDto(val id: Long, val name: String, val currency: String) {
-    fun toDomain() = Account(id, name, currency)
+@Serializable data class AccountDto(
+    val id: Long,
+    val name: String,
+    val currency: String,
+    val type: String = "",
+    // Absent on an older server, meaning "not sent" rather than "zero" -- Account.balance stays
+    // null in that case rather than a misleading Money(0).
+    val balance: String? = null,
+    @SerialName("balance_in_base_currency") val balanceInBase: String? = null,
+    @SerialName("base_currency") val baseCurrency: String? = null,
+    val closed: Boolean = false,
+    val shared: Boolean = false,
+) {
+    fun toDomain() = Account(
+        id = id,
+        name = name,
+        currency = currency,
+        type = type,
+        balance = balance?.let { Money.parse(it, currency) },
+        // Only parsed when both the converted figure and its currency are present -- one
+        // without the other isn't a value this app can render.
+        balanceInBase = if (balanceInBase != null && baseCurrency != null) Money.parse(balanceInBase, baseCurrency) else null,
+        closed = closed,
+        shared = shared,
+    )
 }
 
 @Serializable data class CategoryDto(
@@ -65,6 +91,23 @@ import java.time.LocalDate
     }
 }
 
+/**
+ * One part of a split transaction (spec §1.1's `ApiSerializer::split()` shape), whether inline
+ * on a [RecentDto] row or inside a [SplitsDto]. [toDomain] drops the part -- rather than fail
+ * the whole row -- when [amount] doesn't parse, since a single garbled split shouldn't hide an
+ * otherwise-good transaction.
+ */
+@Serializable data class SplitDto(
+    val amount: String,
+    @SerialName("category_name") val categoryName: String? = null,
+    val description: String? = null,
+) {
+    fun toDomain(currency: String): SplitLine? {
+        val parsedAmount = Money.parse(amount, currency) ?: return null
+        return SplitLine(parsedAmount, categoryName, description)
+    }
+}
+
 @Serializable data class RecentDto(
     val id: Long,
     val merchant: String,
@@ -72,11 +115,35 @@ import java.time.LocalDate
     val amount: String,
     val currency: String,
     @SerialName("account_name") val accountName: String,
+    // Everything below is absent on an older server; each falls back to the value that renders
+    // the row exactly as it always has (spec §1.1).
+    @SerialName("account_id") val accountId: Long? = null,
+    val type: String? = null,
+    @SerialName("category_name") val categoryName: String? = null,
+    val splits: List<SplitDto> = emptyList(),
+    @SerialName("linked_transaction_id") val linkedTransactionId: Long? = null,
+    @SerialName("linked_account_name") val linkedAccountName: String? = null,
 ) {
     fun toDomain(): RecentTransaction? {
         val parsedDate = runCatching { LocalDate.parse(date) }.getOrNull() ?: return null
         val parsedAmount = Money.parse(amount, currency) ?: return null
-        return RecentTransaction(id, merchant, parsedDate, parsedAmount, accountName)
+        val direction = when (type) {
+            "debit" -> Direction.DEBIT
+            "credit" -> Direction.CREDIT
+            else -> Direction.UNKNOWN
+        }
+        return RecentTransaction(
+            id = id,
+            merchant = merchant,
+            date = parsedDate,
+            amount = parsedAmount,
+            accountName = accountName,
+            accountId = accountId,
+            direction = direction,
+            categoryName = categoryName,
+            splits = splits.mapNotNull { it.toDomain(currency) },
+            transfer = linkedTransactionId?.let { TransferLink(it, linkedAccountName) },
+        )
     }
 }
 
@@ -111,3 +178,93 @@ import java.time.LocalDate
     @SerialName("category_id") val categoryId: Long? = null,
     val description: String? = null,
 )
+
+/** One line of `ApiSerializer::budgetLine()` (spec §1.2). All money fields share [BudgetStatusDto.currency]. */
+@Serializable data class BudgetLineDto(
+    @SerialName("category_id") val categoryId: Long,
+    val name: String,
+    @SerialName("parent_id") val parentId: Long? = null,
+    val type: String,
+    val period: String,
+    val budgeted: String,
+    val carried: String,
+    val spent: String,
+    val remaining: String,
+    val shared: Boolean = false,
+) {
+    /** Drops the line -- rather than fail the whole [BudgetStatusDto] -- when any amount doesn't parse. */
+    fun toDomain(currency: String): BudgetLine? {
+        val budgetedM = Money.parse(budgeted, currency) ?: return null
+        val carriedM = Money.parse(carried, currency) ?: return null
+        val spentM = Money.parse(spent, currency) ?: return null
+        val remainingM = Money.parse(remaining, currency) ?: return null
+        return BudgetLine(categoryId, name, parentId, type, period, budgetedM, carriedM, spentM, remainingM, shared)
+    }
+}
+
+@Serializable data class BudgetTotalsDto(val budgeted: String, val spent: String, val remaining: String)
+
+/** `GET /budget/status` response (spec §1.2). */
+@Serializable data class BudgetStatusDto(
+    val month: String,
+    @SerialName("start_date") val startDate: String,
+    @SerialName("end_date") val endDate: String,
+    val currency: String,
+    val totals: BudgetTotalsDto,
+    val categories: List<BudgetLineDto> = emptyList(),
+) {
+    /**
+     * Null when the dates or totals fail to parse -- [dev.otherworld.budget.data.remote.BudgetApiRetrofit]
+     * turns that into the same [dev.otherworld.budget.data.remote.BudgetApiError.ServerError] a
+     * malformed body gets elsewhere, rather than a half-populated [BudgetStatus]. Unparseable
+     * category lines are dropped individually instead.
+     */
+    fun toDomain(): BudgetStatus? {
+        val start = runCatching { LocalDate.parse(startDate) }.getOrNull() ?: return null
+        val end = runCatching { LocalDate.parse(endDate) }.getOrNull() ?: return null
+        val budgetedM = Money.parse(totals.budgeted, currency) ?: return null
+        val spentM = Money.parse(totals.spent, currency) ?: return null
+        val remainingM = Money.parse(totals.remaining, currency) ?: return null
+        return BudgetStatus(
+            month = month,
+            startDate = start,
+            endDate = end,
+            currency = currency,
+            budgeted = budgetedM,
+            spent = spentM,
+            remaining = remainingM,
+            lines = categories.mapNotNull { it.toDomain(currency) },
+        )
+    }
+}
+
+/** One bill of `ApiSerializer::bill()` (spec §1.3), own or shared. */
+@Serializable data class UpcomingBillDto(
+    val id: Long,
+    val name: String,
+    val amount: String,
+    @SerialName("amount_type") val amountType: String? = null,
+    val currency: String,
+    val frequency: String,
+    @SerialName("next_due_date") val nextDueDate: String,
+    val overdue: Boolean = false,
+    @SerialName("account_id") val accountId: Long? = null,
+    @SerialName("account_name") val accountName: String? = null,
+    @SerialName("category_id") val categoryId: Long? = null,
+    @SerialName("is_transfer") val isTransfer: Boolean = false,
+    @SerialName("auto_pay") val autoPay: Boolean = false,
+    val shared: Boolean = false,
+) {
+    /** Null when the due date or amount fails to parse -- dropped from the list rather than crashing it. */
+    fun toDomain(): UpcomingBill? {
+        val parsedDate = runCatching { LocalDate.parse(nextDueDate) }.getOrNull() ?: return null
+        val parsedAmount = Money.parse(amount, currency) ?: return null
+        return UpcomingBill(id, name, parsedAmount, parsedDate, overdue, frequency, accountName, isTransfer, autoPay, shared)
+    }
+}
+
+/** `GET /bills/upcoming` response (spec §1.3). */
+@Serializable data class UpcomingBillsDto(val days: Int, val bills: List<UpcomingBillDto> = emptyList())
+
+/** `GET /transactions/{id}/splits` response (spec §1.1). */
+@Serializable data class SplitsDto(val splits: List<SplitDto> = emptyList())
