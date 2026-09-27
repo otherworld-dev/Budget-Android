@@ -2,6 +2,8 @@ package dev.otherworld.budget.ui.nav
 
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
@@ -12,7 +14,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -66,12 +67,30 @@ fun BudgetNavHost(
             }
         },
     ) { innerPadding ->
+        // Only the bottom inset: each screen already draws its own top bar (and Scaffold), so
+        // applying the full `innerPadding` here would double up their top insets too.
+        //
+        // `consumeWindowInsets` matters just as much as the `padding` above it. `padding` only
+        // reserves layout space for whatever this Scaffold decided `bottomPadding` should be
+        // (the bottom bar's height when it's showing, or -- since nothing else consumed it --
+        // the raw navigation-bar inset when it's hidden); it does not touch the `WindowInsets`
+        // every screen below still reads. Every screen here ends up under this same NavHost, and
+        // several read those insets themselves: CaptureScreen/QuickAddScreen/SettingsScreen each
+        // have their own Scaffold with the Material 3 default `contentWindowInsets` (safeDrawing),
+        // and WelcomeScreen/ReviewScreen call `Modifier.safeDrawingPadding()` directly -- all of
+        // which, left alone, would reserve the *same* navigation-bar inset a second time on top
+        // of the padding already applied here (shrinking CaptureScreen's camera preview and
+        // lifting its shutter button being the one this was caught from). Declaring that amount
+        // consumed tells every one of those descendants it has already been accounted for, so
+        // none of them reserve it twice -- on every route, not just the three with a bottom bar,
+        // since `bottomPadding` already equals the raw inset on the others (see above).
+        val bottomInset = innerPadding.calculateBottomPadding()
         NavHost(
             navController = nav,
             startDestination = startDestination,
-            // Only the bottom inset: each screen already draws its own top bar (and Scaffold),
-            // so applying the full `innerPadding` here would double up their top insets too.
-            modifier = Modifier.padding(bottom = innerPadding.calculateBottomPadding()),
+            modifier = Modifier
+                .padding(bottom = bottomInset)
+                .consumeWindowInsets(PaddingValues(bottom = bottomInset)),
         ) {
             composable(Routes.WELCOME) {
                 // First run only -- MainActivity routes here as the start destination while
@@ -186,22 +205,35 @@ fun BudgetNavHost(
 }
 
 /**
- * Switches tabs the standard bottom-navigation way. `launchSingleTop` here is kept for the same
- * reason [BudgetNavHost]'s long comment on `composable(Routes.CAPTURE)` gives for Quick Add,
- * Settings and Review: none of the three tabs can mean anything twice on the back stack, so
- * re-tapping the tab that is already on top must reuse that entry rather than push a duplicate.
- * `popUpTo(graph.findStartDestination().id) { saveState = true }` plus `restoreState = true` is
- * the extra half of the pattern that a plain `launchSingleTop` navigation elsewhere in this file
- * doesn't need: it is what makes each tab keep its own back stack and scroll position when the
- * user switches away and back, the standard Material 3 bottom-navigation behaviour. The popUpTo
- * target is computed from the graph rather than hard-coded to Routes.CAPTURE because the actual
- * start destination varies (Welcome or Onboarding on a fresh run, or `review/{id}` on a cold
- * start from the notification) -- none of which are reachable once a tab exists to tap in the
- * first place, but hard-coding here would still be wrong the moment that stopped being true.
+ * Switches tabs the standard bottom-navigation way, but popping up to [Routes.CAPTURE] rather
+ * than the usual recipe's `navController.graph.findStartDestination()` -- deliberately, because
+ * that recipe assumes the graph's start destination is always the hub screen still sitting at the
+ * bottom of the back stack, which is not true here. [BudgetNavHost]'s `startDestination` can be
+ * `review/{receiptId}` on a cold start from the review notification, and `graph.findStartDestination()`
+ * keeps naming that same destination for this NavHost's entire lifetime -- it is fixed at graph
+ * construction, not derived from whatever is actually on the stack. Once `ReviewScreen`'s `onDone`
+ * falls back to `nav.navigate(Routes.CAPTURE) { popUpTo(0) { inclusive = true } }` (its own KDoc
+ * above), the stack is `[Capture]` but the start destination the graph reports is still the review
+ * route -- which is no longer in the stack at all. `popUpTo` targeting a route that isn't in the
+ * back stack is a silent no-op, not an error, so every tab tap would just push a new entry on top
+ * forever ([Capture, Overview, Activity, Capture, ...]), with Back walking every tab ever visited
+ * one at a time instead of leaving, and `restoreState` never finding anything saved to restore.
+ *
+ * [Routes.CAPTURE] itself has no such problem: it is both the post-onboarding landing screen
+ * ([OnboardingScreen]'s `onDone` above) and Review's own fallback target, so by the time any tab
+ * is reachable to tap at all, Capture is already sitting at the bottom of the stack underneath it
+ * -- unlike the graph's nominal start destination, which the review cold-start path leaves behind.
+ *
+ * `launchSingleTop` here is kept for the same reason [BudgetNavHost]'s long comment on
+ * `composable(Routes.CAPTURE)` gives for Quick Add, Settings and Review: none of the three tabs
+ * can mean anything twice on the back stack, so re-tapping the tab that is already on top must
+ * reuse that entry rather than push a duplicate. `saveState`/`restoreState` is the extra half of
+ * the pattern: it is what makes each tab keep its own back stack and scroll position when the
+ * user switches away and back, the standard Material 3 bottom-navigation behaviour.
  */
 private fun NavHostController.navigateToTab(route: String) {
     navigate(route) {
-        popUpTo(graph.findStartDestination().id) { saveState = true }
+        popUpTo(Routes.CAPTURE) { saveState = true }
         launchSingleTop = true
         restoreState = true
     }

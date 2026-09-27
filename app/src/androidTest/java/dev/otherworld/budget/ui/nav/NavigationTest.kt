@@ -338,4 +338,71 @@ class NavigationTest {
             composeRule.onNodeWithText("Budget Companion").assertIsDisplayed()
         }
     }
+
+    /**
+     * A regression test for a bug [tappingTheActivityTabNavigatesToActivity] alone could not
+     * catch: `navigateToTab`'s `popUpTo` originally targeted
+     * `nav.graph.findStartDestination().id`, which is fixed at graph construction and, on this
+     * exact cold-start path, keeps naming `review/{receiptId}` -- a route that no longer exists
+     * on the stack once Discard's fallback below runs. `popUpTo` targeting a route that isn't in
+     * the back stack silently does nothing, so every tab tap pushed a new entry instead of
+     * reusing Capture's: `[Capture, Overview, Activity, Capture, ...]`, growing without bound and
+     * turning one Back press into a long walk through every tab ever visited instead of leaving.
+     * `navigateToTab` now pops up to [Routes.CAPTURE] itself, which -- unlike the graph's nominal
+     * start destination here -- is always what Discard's fallback below actually leaves on the
+     * stack.
+     */
+    @Test
+    fun tabSwitchingAfterAReviewColdStartDoesNotStackTabsUnbounded() {
+        credentialStore.save(Credentials("http://127.0.0.1:1", "tester", "app-password"))
+        runBlocking {
+            dao.insert(
+                PendingReceiptEntity(
+                    photoPath = "/tmp/notification-review-tabs.jpg",
+                    capturedAt = System.currentTimeMillis(),
+                    state = CaptureState.AWAITING_REVIEW,
+                ),
+            )
+        }
+
+        val intent = Intent(context, MainActivity::class.java).setAction(ReceiptNotifier.ACTION_REVIEW)
+
+        ActivityScenario.launch<MainActivity>(intent).use {
+            composeRule.waitUntil(timeoutMillis = 10_000) {
+                composeRule.onAllNodesWithText("Discard").fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNodeWithText("Discard").performClick()
+            composeRule.waitForIdle()
+            val discardNodes = composeRule.onAllNodesWithText("Discard")
+            discardNodes[discardNodes.fetchSemanticsNodes().size - 1].performClick()
+
+            // Same landing point as reviewNotificationColdStartOpensReviewAndCanLeaveIt: Review
+            // was the start destination, popBackStack() was refused, and the onDone fallback
+            // above navigated to Capture with popUpTo(0) -- the exact state the bug needed.
+            composeRule.waitUntil(timeoutMillis = 10_000) {
+                composeRule.onAllNodesWithText("Budget Companion").fetchSemanticsNodes().isNotEmpty()
+            }
+
+            // Capture -> Overview -> Activity -> Capture. Each tap goes through navigateToTab.
+            composeRule.onNodeWithText("Overview").performClick()
+            composeRule.waitForIdle()
+            composeRule.onNodeWithText("Overview coming soon").assertIsDisplayed()
+
+            composeRule.onNodeWithText("Activity").performClick()
+            composeRule.waitForIdle()
+            composeRule.onNodeWithText("Activity coming soon").assertIsDisplayed()
+
+            composeRule.onNodeWithText("Capture").performClick()
+            composeRule.waitForIdle()
+            composeRule.onNodeWithText("Budget Companion").assertIsDisplayed()
+
+            // One Back press is the assertion: with the fix, the back stack collapsed back down
+            // to a single Capture entry (each tab tap popped the previous one up to Capture
+            // rather than stacking on top of it), so nothing is left for Navigation-Compose's own
+            // BackHandler to pop to -- same contract the sign-out and expired-session tests above
+            // rely on -- and the press falls through to finish the Activity. Under the original
+            // bug this press would have landed back on Activity instead of exiting.
+            assertThrows(NoActivityResumedException::class.java) { pressBack() }
+        }
+    }
 }
