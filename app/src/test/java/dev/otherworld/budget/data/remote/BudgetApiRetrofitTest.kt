@@ -468,6 +468,21 @@ class BudgetApiRetrofitTest {
     }
 
     @Test
+    fun `a bill whose amount type isn't fixed is an estimate`() = runTest {
+        // The server only works out a variable bill's real amount when it's paid; until then
+        // `amount` is the stored figure, so the app must not present it as exact.
+        fun bill(id: Int, amountType: String?) = """
+            {"id":$id,"name":"B$id","amount":"40.00",${amountType?.let { "\"amount_type\":\"$it\"," } ?: ""}
+             "currency":"GBP","frequency":"monthly","next_due_date":"2026-10-02"}
+        """.trimIndent()
+        server.enqueue(ok("""{"days":14,"bills":[${bill(1, "variable")},${bill(2, "fixed")},${bill(3, null)}]}"""))
+
+        val bills = api.upcomingBills(14).getOrThrow()
+
+        assertEquals(listOf(true, false, false), bills.map { it.estimated })
+    }
+
+    @Test
     fun `capabilities read check_available, absent means false`() = runTest {
         server.enqueue(ok("""{"ocr_available":true,"currency":"GBP","version":"2.41.0","check_available":true}"""))
         assertTrue(api.capabilities().getOrThrow().checkAvailable)

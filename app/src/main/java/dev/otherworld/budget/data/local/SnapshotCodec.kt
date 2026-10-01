@@ -152,15 +152,17 @@ object SnapshotCodec {
         val isTransfer: Boolean,
         val autoPay: Boolean,
         val shared: Boolean,
+        // Defaulted so a row cached before the flag existed still decodes (as exact).
+        val estimated: Boolean = false,
     )
 
     private fun UpcomingBill.toDto() = UpcomingBillDto(
         id, name, amount.toDto(), nextDueDate.toString(), overdue, frequency,
-        accountName, isTransfer, autoPay, shared,
+        accountName, isTransfer, autoPay, shared, estimated,
     )
     private fun UpcomingBillDto.toDomain() = UpcomingBill(
         id, name, amount.toDomain(), LocalDate.parse(nextDueDate), overdue, frequency,
-        accountName, isTransfer, autoPay, shared,
+        accountName, isTransfer, autoPay, shared, estimated,
     )
 
     fun encodeBills(v: List<UpcomingBill>): String = json.encodeToString(v.map { it.toDto() })

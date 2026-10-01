@@ -259,7 +259,11 @@ import java.time.LocalDate
     fun toDomain(): UpcomingBill? {
         val parsedDate = runCatching { LocalDate.parse(nextDueDate) }.getOrNull() ?: return null
         val parsedAmount = Money.parse(amount, currency) ?: return null
-        return UpcomingBill(id, name, parsedAmount, parsedDate, overdue, frequency, accountName, isTransfer, autoPay, shared)
+        return UpcomingBill(
+            id, name, parsedAmount, parsedDate, overdue, frequency, accountName, isTransfer, autoPay, shared,
+            // An older server omits amount_type; with nothing saying otherwise the amount is exact.
+            estimated = amountType != null && amountType != "fixed",
+        )
     }
 }
 

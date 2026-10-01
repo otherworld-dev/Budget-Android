@@ -37,8 +37,10 @@ import dev.otherworld.budget.domain.model.BudgetLine
 import dev.otherworld.budget.ui.common.openInBrowser
 
 /**
- * All expense categories with a budget, sorted the same way as Overview's compact "at risk" card
- * (overspent first, then lowest `remaining / budgeted` -- see [BudgetOrdering.byRisk]). Reached
+ * All expense categories with a budget, nested as on the web Budget page with each level sorted
+ * the way Overview's compact "at risk" card is (overspent first, then lowest
+ * `remaining / budgeted` -- see [byRiskTree]). Unlike that card, parents are listed here, above
+ * their subcategories, so the tree adds up the way the web page does. Reached
  * only from Overview's "See all" link, sharing its [OverviewViewModel] rather than fetching
  * again: see [dev.otherworld.budget.ui.nav.BudgetNavHost] for how that instance is scoped to the
  * Overview back-stack entry. No pull-to-refresh of its own -- Overview already owns that, and
@@ -100,8 +102,8 @@ fun BudgetScreen(
             ) {
                 val data = budget.data
                 when {
-                    data != null -> data.byRisk().forEach { line ->
-                        BudgetDetailRow(line, onOpen = { open(viewModel.budgetUrl()) })
+                    data != null -> data.byRiskTree().forEach { row ->
+                        BudgetDetailRow(row.line, row.depth, onOpen = { open(viewModel.budgetUrl()) })
                     }
                     // Same "part-upgraded server" case OverviewScreen's SectionBody handles --
                     // this screen has its own inline state handling rather than SectionBody
@@ -125,16 +127,22 @@ fun BudgetScreen(
     }
 }
 
-/** One category's full detail: spent-of-budgeted, remaining, and a bar (spec §2.2). Tapping it
- *  opens the Budget web page, same as Overview's own compact row for the same category. */
+/** One category's full detail: spent-of-budgeted, remaining, and a bar (spec §2.2), indented
+ *  by [depth] under its parent as on the web Budget page. Tapping it opens the Budget web page,
+ *  same as Overview's own compact row for the same category. */
 @Composable
-private fun BudgetDetailRow(line: BudgetLine, onOpen: () -> Unit) {
+private fun BudgetDetailRow(line: BudgetLine, depth: Int, onOpen: () -> Unit) {
     val negative = line.remaining.amount.signum() < 0
     val color = if (negative) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-    Column(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(vertical = 12.dp)) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpen)
+            .padding(start = (depth * 16).dp, top = 12.dp, bottom = 12.dp),
+    ) {
         Text(line.name, style = MaterialTheme.typography.bodyLarge)
         Text(
-            stringResource(R.string.overview_budget_line, line.spent.format(), line.budgeted.format()),
+            withPeriod(line, stringResource(R.string.overview_budget_line, line.spent.format(), line.budgeted.format())),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

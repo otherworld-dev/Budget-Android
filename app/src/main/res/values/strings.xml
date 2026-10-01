@@ -121,6 +121,14 @@
     <string name="overview_see_all">See all</string>
     <string name="overview_budget_line">%1$s of %2$s</string>
     <string name="overview_budget_over">%1$s over</string>
+    <!-- A weekly, quarterly or yearly line's figures cover its own period, not the month:
+         "£40.00 of £50.00 · this week". -->
+    <string name="overview_budget_with_period">%1$s · %2$s</string>
+    <string name="overview_period_weekly">this week</string>
+    <string name="overview_period_quarterly">this quarter</string>
+    <string name="overview_period_yearly">this year</string>
+    <!-- A variable bill: the server only knows the real amount once it's paid. -->
+    <string name="overview_bill_estimate">est. %1$s</string>
     <string name="overview_due_overdue">Overdue</string>
     <string name="overview_due_today">Today</string>
     <string name="overview_due_tomorrow">Tomorrow</string>

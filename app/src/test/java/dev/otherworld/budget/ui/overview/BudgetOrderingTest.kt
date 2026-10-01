@@ -64,6 +64,70 @@ class BudgetOrderingTest {
         assertEquals(listOf(zeroBudget, overspent), status(overspent, zeroBudget).byRisk())
     }
 
+    /** A line with an explicit id and parent, for the parent/child tests. */
+    private fun node(id: Long, name: String, parentId: Long?, spent: String) = BudgetLine(
+        categoryId = id,
+        name = name,
+        parentId = parentId,
+        type = "expense",
+        period = "monthly",
+        budgeted = money("100.00"),
+        carried = money("0.00"),
+        spent = money(spent),
+        remaining = money(BigDecimal("100.00").subtract(BigDecimal(spent)).toPlainString()),
+        shared = false,
+    )
+
+    @Test fun `atRisk leaves out a parent whose subcategories are listed`() {
+        // The server's parent line already includes its children's figures, so listing it beside
+        // them would show the same money twice.
+        val parent = node(1, "Home", parentId = null, spent = "99.00")
+        val child = node(2, "Water", parentId = 1, spent = "50.00")
+        val other = node(3, "Fuel", parentId = null, spent = "10.00")
+        assertEquals(listOf(child, other), status(parent, child, other).atRisk())
+    }
+
+    @Test fun `atRisk keeps a parent with no listed subcategories`() {
+        val parent = node(1, "Home", parentId = null, spent = "90.00")
+        assertEquals(listOf(parent), status(parent).atRisk())
+    }
+
+    @Test fun `budget tree nests subcategories under their parent, each level by risk`() {
+        val home = node(1, "Home", parentId = null, spent = "10.00")
+        val fuel = node(2, "Fuel", parentId = null, spent = "90.00")
+        val water = node(3, "Water", parentId = 1, spent = "20.00")
+        val power = node(4, "Power", parentId = 1, spent = "80.00")
+        assertEquals(
+            listOf(BudgetTreeRow(fuel, 0), BudgetTreeRow(home, 0), BudgetTreeRow(power, 1), BudgetTreeRow(water, 1)),
+            status(home, fuel, water, power).byRiskTree(),
+        )
+    }
+
+    @Test fun `three levels nest with increasing depth`() {
+        val bank = node(1, "Bank", parentId = null, spent = "0.00")
+        val card = node(2, "Card", parentId = 1, spent = "0.00")
+        val spotify = node(3, "Spotify", parentId = 2, spent = "0.00")
+        assertEquals(
+            listOf(BudgetTreeRow(bank, 0), BudgetTreeRow(card, 1), BudgetTreeRow(spotify, 2)),
+            status(spotify, card, bank).byRiskTree(),
+        )
+    }
+
+    @Test fun `a subcategory whose parent has no line of its own is a root`() {
+        // parent_id names the Budget page's parent, which can be missing from the list when it has
+        // no budget of its own.
+        val orphan = node(5, "Snacks", parentId = 99, spent = "10.00")
+        assertEquals(listOf(BudgetTreeRow(orphan, 0)), status(orphan).byRiskTree())
+    }
+
+    @Test fun `a parent cycle does not loop forever`() {
+        val a = node(1, "A", parentId = 2, spent = "10.00")
+        val b = node(2, "B", parentId = 1, spent = "20.00")
+        val rows = status(a, b).byRiskTree()
+        assertEquals(setOf(a, b), rows.map { it.line }.toSet())
+        assertEquals(2, rows.size)
+    }
+
     @Test fun `atRisk takes three`() {
         val lines = (1..5).map { i ->
             line("Cat$i", budgeted = "100.00", spent = "${i * 10}.00", remaining = "${100 - i * 10}.00")

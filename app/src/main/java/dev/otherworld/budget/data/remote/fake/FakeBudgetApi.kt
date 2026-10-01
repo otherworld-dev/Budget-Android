@@ -229,6 +229,8 @@ object FakeCheckData {
             accountName = "Current Account", isTransfer = false, autoPay = true, shared = false),
         UpcomingBill(2, "Phone", Money(BigDecimal("35.00"), "GBP"),
             LocalDate.of(2026, 10, 2), overdue = false, frequency = "monthly",
-            accountName = "Current Account", isTransfer = false, autoPay = true, shared = false),
+            accountName = "Current Account", isTransfer = false, autoPay = true, shared = false,
+            // A variable bill: the amount is the stored figure, shown as an estimate.
+            estimated = true),
     )
 }

@@ -3,7 +3,9 @@ package dev.otherworld.budget.data.local
 import dev.otherworld.budget.data.remote.fake.FakeCheckData
 import dev.otherworld.budget.domain.model.Account
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.math.BigDecimal
 
@@ -63,6 +65,9 @@ class SnapshotCodecTest {
     @Test fun `upcoming bills round-trip`() {
         val back = SnapshotCodec.decodeBills(SnapshotCodec.encodeBills(FakeCheckData.bills))!!
         assertEquals(FakeCheckData.bills, back)
+        // The fake's Phone bill is variable: the estimate flag must survive the cache.
+        assertTrue(back.first { it.name == "Phone" }.estimated)
+        assertFalse(back.first { it.name == "Council Tax" }.estimated)
     }
 
     @Test fun `recent transactions round-trip, including splits and a transfer pair`() {

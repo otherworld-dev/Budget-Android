@@ -48,7 +48,47 @@ private fun BudgetLine.riskRank(): RiskRank = when {
  */
 fun BudgetStatus.byRisk(): List<BudgetLine> = lines
     .filter { it.type == "expense" && (it.budgeted.amount.signum() > 0 || it.spent.amount.signum() > 0) }
-    .sortedWith(compareBy<BudgetLine> { it.riskRank() }.thenBy { it.name.lowercase() })
+    .sortedWith(riskOrder)
 
-/** The [count] riskiest lines from [byRisk], for a compact Overview card. */
-fun BudgetStatus.atRisk(count: Int = 3): List<BudgetLine> = byRisk().take(count)
+private val riskOrder = compareBy<BudgetLine> { it.riskRank() }.thenBy { it.name.lowercase() }
+
+/**
+ * The [count] riskiest lines from [byRisk], for a compact Overview card -- leaving out any line
+ * whose subcategories are listed too. The server mirrors the web Budget page, where a parent's
+ * budgeted and spent already include its children's, so a parent beside its own children would
+ * show the same money twice.
+ */
+fun BudgetStatus.atRisk(count: Int = 3): List<BudgetLine> {
+    val ranked = byRisk()
+    val parents = ranked.mapNotNullTo(HashSet()) { it.parentId }
+    return ranked.filter { it.categoryId !in parents }.take(count)
+}
+
+/** One row of the Budget detail list: a line and how deep it sits under its parents (0 = top). */
+data class BudgetTreeRow(val line: BudgetLine, val depth: Int)
+
+/**
+ * [byRisk]'s lines arranged as the web Budget page's tree: top-level lines closest to running out
+ * first, each followed by its subcategories (by the same order) one level deeper. A line whose
+ * parent isn't in the list -- `parent_id` names the Budget page's parent, which has no line of
+ * its own when it has no budget -- is shown at the top level. Each line appears exactly once,
+ * even if the parent links were ever to form a cycle.
+ */
+fun BudgetStatus.byRiskTree(): List<BudgetTreeRow> {
+    val ranked = byRisk()
+    val ids = ranked.mapTo(HashSet()) { it.categoryId }
+    val children = ranked.filter { it.parentId in ids }.groupBy { it.parentId }
+    val rows = mutableListOf<BudgetTreeRow>()
+    val placed = HashSet<Long>()
+
+    fun place(line: BudgetLine, depth: Int) {
+        if (!placed.add(line.categoryId)) return
+        rows += BudgetTreeRow(line, depth)
+        children[line.categoryId].orEmpty().forEach { place(it, depth + 1) }
+    }
+
+    ranked.filter { it.parentId !in ids }.forEach { place(it, 0) }
+    // Only lines caught in a parent cycle are left unplaced; list them rather than drop them.
+    ranked.forEach { place(it, 0) }
+    return rows
+}

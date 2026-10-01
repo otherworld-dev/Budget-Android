@@ -67,6 +67,10 @@ data class BudgetStatus(
  * verdict (`next_due_date` before today), not recomputed on-device. [accountName] is null
  * exactly when the bill isn't linked to an account, or that account isn't visible to the
  * caller -- the same visibility rule as [TransferLink.linkedAccountName].
+ *
+ * [estimated] is true when the bill's `amount_type` isn't `"fixed"`: the server only works out a
+ * variable bill's real amount when it's paid, so until then [amount] is the stored figure and
+ * must be shown as an estimate, not as what will actually leave the account.
  */
 data class UpcomingBill(
     val id: Long,
@@ -79,4 +83,5 @@ data class UpcomingBill(
     val isTransfer: Boolean,
     val autoPay: Boolean,
     val shared: Boolean,
+    val estimated: Boolean = false,
 )
