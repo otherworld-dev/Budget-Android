@@ -307,6 +307,19 @@ budget month. Response (`ApiSerializer::budgetStatus()`):
 doesn't display them. `remaining` can go negative — an overspent category counts against the
 total, not just its own row.
 
+The figures mirror the web Budget page exactly, which has consequences a client must respect:
+
+- A parent line's `budgeted` and `spent` already include its subcategories, which are listed
+  too, so lines must never be summed. The app shows the tree on its Budget detail screen and
+  leaves parents with listed subcategories out of Overview's "closest to running out".
+- `parent_id` is the line's parent on the Budget page, and that parent can be missing from
+  `categories` when it has no budget of its own. The app then shows the line at the top level.
+- A weekly, quarterly or yearly line covers its own period, not the budget month: the week
+  containing the 15th, the calendar quarter or the calendar year. The app labels those rows
+  ("this week", "this quarter", "this year").
+- `totals.spent` also counts expense categories with no budget, so it isn't the sum of the
+  lines. The app's headline uses `totals`.
+
 **`GET bills/upcoming?days=N`.** `days` is optional, defaults to 14, and is clamped to 1–90; a
 non-numeric value falls back to the default rather than a 500. Response:
 `{ "days": 14, "bills": [ ... ] }`, each bill (`ApiSerializer::bill()`):
@@ -331,7 +344,9 @@ non-numeric value falls back to the default rather than a 500. Response:
 ```
 
 The list is sorted overdue first, then by `next_due_date`, and includes shared bills alongside
-the caller's own.
+the caller's own. When `amount_type` isn't `"fixed"`, `amount` is the stored figure: the server
+only works out the real amount when the bill is paid, so the app shows it as an estimate
+("est. £40.00"). An absent `amount_type` is treated as fixed.
 
 **Extended existing shapes.** `transactions/recent` and the single-transaction record gain keys,
 every one absent — not sent as `null` — on an older server. `accounts` gains nothing; the app
@@ -369,3 +384,11 @@ both do, Overview switches to the same whole-screen "Update Budget on your serve
 absent `check_available`. Balances and
 Activity aren't gated this way: `accounts` and `transactions/recent` are existing routes that
 simply grew keys, so a 404 or 501 there is a genuine server error, not an old-server signal.
+
+A server fault on any of the check routes is a 400 with `ocs.data.error`, the same as the
+other v1 routes, not a 5xx. The app shows it as that section's error, with Retry; only a 404 or
+501 means the route is missing.
+
+Split parts on list rows come largest first; on `GET transactions/{id}` and its `/splits` they
+come in the order they were created. A split row's own `category_name` is `null`, because the
+categories are on its parts.
