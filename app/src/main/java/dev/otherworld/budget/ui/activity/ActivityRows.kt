@@ -88,3 +88,22 @@ fun buildActivityRows(transactions: List<RecentTransaction>): List<ActivityRow> 
     }
     return rows
 }
+
+/**
+ * Where a transfer went, for a row whose other half isn't in the list (both halves present
+ * collapse into one [ActivityRow.TransferPair] instead). [To] and [From] name the other account;
+ * [Unnamed] is a transfer into or out of an account the user can't see, whose name the server
+ * deliberately leaves out.
+ */
+sealed interface TransferRoute {
+    data class To(val account: String) : TransferRoute
+    data class From(val account: String) : TransferRoute
+    data object Unnamed : TransferRoute
+}
+
+/** Null for anything that isn't one half of a transfer. Money leaving (a debit) went *to* the other account. */
+fun RecentTransaction.transferRoute(): TransferRoute? {
+    val link = transfer ?: return null
+    val account = link.linkedAccountName ?: return TransferRoute.Unnamed
+    return if (direction == Direction.DEBIT) TransferRoute.To(account) else TransferRoute.From(account)
+}

@@ -2,6 +2,7 @@ package dev.otherworld.budget.ui.nav
 
 import android.Manifest
 import android.content.Intent
+import android.os.SystemClock
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
@@ -9,9 +10,9 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
-import androidx.test.espresso.Espresso.pressBack
-import androidx.test.espresso.NoActivityResumedException
+import androidx.test.espresso.Espresso.pressBackUnconditionally
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import dagger.hilt.android.EntryPointAccessors
@@ -25,7 +26,7 @@ import dev.otherworld.budget.data.work.ReceiptNotifier
 import dev.otherworld.budget.di.TestSupportEntryPoint
 import dev.otherworld.budget.domain.model.CaptureState
 import kotlinx.coroutines.runBlocking
-import org.junit.Assert.assertThrows
+import org.junit.Assert.assertNotEquals
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -216,11 +217,10 @@ class NavigationTest {
             // The whole back stack was cleared to Onboarding alone (popUpTo(0) { inclusive =
             // true }), so there is nothing left for Navigation-Compose's own BackHandler to pop
             // to: the system back press falls through to the Activity's default handling and
-            // finishes the app entirely, rather than returning to Settings -- or Capture.
-            // Espresso surfaces exactly that outcome as NoActivityResumedException instead of
-            // letting pressBack() return normally, which is what this asserts: no other screen
-            // was left resumed for Back to land on.
-            assertThrows(NoActivityResumedException::class.java) { pressBack() }
+            // leaves the app entirely, rather than returning to Settings -- or Capture.
+            // assertBackLeavesTheApp checks exactly that outcome: no other screen was left for
+            // Back to land on, so the app is no longer in the foreground.
+            it.assertBackLeavesTheApp()
         }
     }
 
@@ -252,8 +252,8 @@ class NavigationTest {
             composeRule.onNodeWithText("Connect to your Nextcloud").assertIsDisplayed()
 
             // Same back-stack contract as sign-out: nothing authenticated is left behind for
-            // Back to land on, so the press falls through to the Activity and finishes the app.
-            assertThrows(NoActivityResumedException::class.java) { pressBack() }
+            // Back to land on, so the press falls through to the Activity and leaves the app.
+            it.assertBackLeavesTheApp()
         }
     }
 
@@ -413,9 +413,25 @@ class NavigationTest {
             // to a single Capture entry (each tab tap popped the previous one up to Capture
             // rather than stacking on top of it), so nothing is left for Navigation-Compose's own
             // BackHandler to pop to -- same contract the sign-out and expired-session tests above
-            // rely on -- and the press falls through to finish the Activity. Under the original
+            // rely on -- and the press falls through and leaves the app. Under the original
             // bug this press would have landed back on Activity instead of exiting.
-            assertThrows(NoActivityResumedException::class.java) { pressBack() }
+            it.assertBackLeavesTheApp()
         }
     }
+}
+
+/**
+ * Presses Back and asserts that it left the app rather than landing on another screen of it.
+ *
+ * Android 12 and later no longer finish a root launcher activity on Back, they move its task
+ * behind instead (seen on an Android 16 phone), so Espresso's old signal for "Back exited the
+ * app", NoActivityResumedException, never fires and the press times out waiting for focus. The
+ * Activity being left un-resumed is the same outcome stated directly: if Back had popped to
+ * another screen inside the app, the Activity would still be resumed and this fails.
+ */
+private fun ActivityScenario<MainActivity>.assertBackLeavesTheApp() {
+    pressBackUnconditionally()
+    val deadline = SystemClock.uptimeMillis() + 10_000
+    while (state == Lifecycle.State.RESUMED && SystemClock.uptimeMillis() < deadline) SystemClock.sleep(100)
+    assertNotEquals(Lifecycle.State.RESUMED, state)
 }

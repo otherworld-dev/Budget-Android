@@ -1,9 +1,10 @@
 package dev.otherworld.budget.ui.review
 
-import androidx.compose.ui.test.assertHasNoClickAction
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performTextClearance
@@ -12,13 +13,13 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.otherworld.budget.core.AndroidStringResources
-import dev.otherworld.budget.data.prefs.LastAccountStore
-import dev.otherworld.budget.data.remote.CreateTransactionRequest
-import dev.otherworld.budget.data.remote.CreatedTransaction
 import dev.otherworld.budget.data.auth.Credentials
 import dev.otherworld.budget.data.auth.InMemoryCredentialStore
 import dev.otherworld.budget.data.local.SnapshotDao
 import dev.otherworld.budget.data.local.SnapshotEntity
+import dev.otherworld.budget.data.prefs.LastAccountStore
+import dev.otherworld.budget.data.remote.CreateTransactionRequest
+import dev.otherworld.budget.data.remote.CreatedTransaction
 import dev.otherworld.budget.data.remote.fake.FakeBudgetApi
 import dev.otherworld.budget.data.repo.CatalogRepository
 import dev.otherworld.budget.data.repo.ExtractOutcome
@@ -30,14 +31,14 @@ import dev.otherworld.budget.domain.model.CaptureState
 import dev.otherworld.budget.domain.model.DraftTransaction
 import dev.otherworld.budget.domain.model.LineItem
 import dev.otherworld.budget.domain.model.Money
-import kotlinx.coroutines.flow.Flow
-import org.junit.Rule
-import org.junit.Test
-import org.junit.runner.RunWith
 import java.io.File
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
+import kotlinx.coroutines.flow.Flow
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
 
 /**
  * Exercises [ReviewScreen] against a real [ReviewViewModel] built directly (no Hilt) --
@@ -97,16 +98,13 @@ class ReviewScreenTest {
     }
 
     @Test
-    fun lineItemsRenderAsStaticTextWithNoClickAction() {
+    fun lineItemsAreEditableSoAMisreadItemCanBeFixed() {
         composeRule.setContent { ReviewScreen(viewModel = viewModel(), onDone = {}) }
         composeRule.waitForIdle()
 
-        // substring = true: the row renders "Milk 2L  £1.20" as a single Text (description
-        // + formatted amount per the brief's exact format string), so an exact match would
-        // never find it. This is the whole point of the display-only requirement: if a click
-        // handler (e.g. a per-line category picker) were ever added to a line item row, this
-        // assertion fails.
-        composeRule.onNodeWithText("Milk 2L", substring = true).assertHasNoClickAction()
+        // Line items used to be display-only. Since the line-item editing change they are text
+        // fields, so a misread description or cost can be corrected before splitting the receipt.
+        composeRule.onNodeWithText("Milk 2L", substring = true).assert(hasSetTextAction())
     }
 
     @Test

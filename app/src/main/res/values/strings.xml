@@ -89,8 +89,10 @@
     <string name="activity_dismiss">Dismiss</string>
     <string name="activity_uncategorised">Uncategorised</string>
     <string name="activity_split_chip">Split</string>
-    <string name="activity_transfer_to">Transfer to %1$s</string>
-    <string name="activity_transfer_from">Transfer from %1$s</string>
+    <!-- One half of a transfer: date, then the account the money left and the one it went to. -->
+    <string name="activity_row_subtitle_transfer">%1$s · %2$s → %3$s</string>
+    <!-- A transfer into or out of an account the user can't see: date, own account. -->
+    <string name="activity_row_subtitle_transfer_unnamed">%1$s · %2$s · Transfer</string>
     <string name="activity_transfer">Transfer</string>
     <string name="activity_transfer_pair">%1$s → %2$s</string>
     <string name="activity_updated_just_now">Updated just now</string>
@@ -181,13 +183,15 @@
 
     <!-- Welcome -->
     <string name="welcome_title">Welcome to Budget Companion</string>
-    <string name="welcome_subtitle">Capture receipts and save them straight to Budget on your Nextcloud.</string>
+    <string name="welcome_subtitle">Capture receipts and save them straight to Budget on your Nextcloud, and keep an eye on where you stand.</string>
     <string name="welcome_step1_title">Snap a receipt</string>
     <string name="welcome_step1_body">Photograph it with the camera, or share an image from another app.</string>
     <string name="welcome_step2_title">Your server reads it</string>
     <string name="welcome_step2_body">If receipt scanning is set up on your Budget server, it reads the merchant, date, total and individual items for you automatically.</string>
     <string name="welcome_step3_title">Review and save</string>
     <string name="welcome_step3_body">Check the details — split them across categories if you like — and save. Captured offline? It\'s queued and sent the moment you\'re back online.</string>
+    <string name="welcome_step4_title">Check where you stand</string>
+    <string name="welcome_step4_body">Overview shows your account balances, how much of this month\'s budget is left and any bills due in the next two weeks. Activity lists your recent transactions, with splits and transfers shown as well. Setting things up and making changes is still done in Budget on the web.</string>
     <string name="welcome_ocr_notice">Receipt scanning is a feature of your Budget server — you\'ll find it in Budget\'s settings in Nextcloud. Without it, you can still capture receipts and enter the details yourself.</string>
     <string name="welcome_get_started">Get started</string>
 
