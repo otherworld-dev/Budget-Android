@@ -5,9 +5,10 @@ package dev.otherworld.budget.ui.common
  * same hash rather than each hand-rolling its own copy that could quietly drift apart.
  *
  * All four were opened from the app on a phone against a live server (2026-10-02). [accounts],
- * [budget] and [bills] land on those pages. [transaction] lands on the Transactions page, but the
- * web app currently ignores `?id=`, so it shows the list rather than that one transaction. The id
- * is kept so the link starts working as soon as the web app reads it.
+ * [budget] and [bills] land on those pages. [transaction] opens that transaction's edit form on
+ * a server whose web app reads `?id=`, which was added alongside the check routes. An older web
+ * app ignores the id and just shows the Transactions list, which is still a sensible place to
+ * land.
  */
 object WebLinks {
     fun transaction(server: String, id: Long) = "$server/apps/budget/#transactions?id=$id"
