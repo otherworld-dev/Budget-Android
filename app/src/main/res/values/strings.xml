@@ -121,6 +121,8 @@
     <string name="overview_see_all">See all</string>
     <string name="overview_budget_line">%1$s of %2$s</string>
     <string name="overview_budget_over">%1$s over</string>
+    <string name="overview_budget_remaining">%1$s left</string>
+    <string name="overview_budget_none">No budgets set for this month. Set them up in Budget on the web.</string>
     <!-- A weekly, quarterly or yearly line's figures cover its own period, not the month:
          "£40.00 of £50.00 · this week". -->
     <string name="overview_budget_with_period">%1$s · %2$s</string>

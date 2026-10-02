@@ -128,6 +128,15 @@ class BudgetOrderingTest {
         assertEquals(2, rows.size)
     }
 
+    @Test fun `a month with no expense budgets has nothing to show`() {
+        // A user who hasn't set budgets up still gets a status back (income lines, zero totals);
+        // the card must say so rather than show "£0.00 left of £0.00".
+        val income = line("Salary", type = "income", budgeted = "2000.00", spent = "0.00", remaining = "2000.00")
+        assertEquals(false, status(income).hasBudgets())
+        assertEquals(false, status().hasBudgets())
+        assertEquals(true, status(line("Fuel", budgeted = "80.00", spent = "0.00", remaining = "80.00")).hasBudgets())
+    }
+
     @Test fun `atRisk takes three`() {
         val lines = (1..5).map { i ->
             line("Cat$i", budgeted = "100.00", spent = "${i * 10}.00", remaining = "${100 - i * 10}.00")

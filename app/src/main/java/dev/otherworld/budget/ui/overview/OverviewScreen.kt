@@ -221,7 +221,9 @@ private fun BudgetSection(
 ) {
     SectionHeader(stringResource(R.string.overview_budget_title), onOpen)
     SectionBody(section, onRetry) { budget ->
-        Column {
+        if (!budget.hasBudgets()) {
+            Text(stringResource(R.string.overview_budget_none), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else Column {
             // Overspent reads the way the category rows do ("£31.20 over", in the error colour),
             // not "-£31.20 left of £1,450.00" in the normal one.
             val overspent = budget.remaining.amount.signum() < 0

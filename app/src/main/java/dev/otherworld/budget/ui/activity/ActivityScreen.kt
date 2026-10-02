@@ -277,10 +277,12 @@ private fun AmountText(amount: String, isCredit: Boolean) {
 
 @Composable
 private fun SplitPartRow(part: SplitLine) {
+    // Indented under the transaction it belongs to: at full width the parts read as separate
+    // transactions (seen on a device).
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
+            .padding(start = 16.dp, top = 4.dp, bottom = 4.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Column(modifier = Modifier.weight(1f)) {
@@ -297,7 +299,11 @@ private fun SplitPartRow(part: SplitLine) {
             }
         }
         Spacer(Modifier.width(12.dp))
-        Text(part.amount.format(), style = MaterialTheme.typography.bodyMedium)
+        Text(
+            part.amount.format(),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

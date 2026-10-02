@@ -102,6 +102,10 @@ fun BudgetScreen(
             ) {
                 val data = budget.data
                 when {
+                    data != null && !data.hasBudgets() -> Text(
+                        stringResource(R.string.overview_budget_none),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     data != null -> data.byRiskTree().forEach { row ->
                         BudgetDetailRow(row.line, row.depth, onOpen = { open(viewModel.budgetUrl()) })
                     }
@@ -147,7 +151,11 @@ private fun BudgetDetailRow(line: BudgetLine, depth: Int, onOpen: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            if (negative) stringResource(R.string.overview_budget_over, line.remaining.abs().format()) else line.remaining.format(),
+            if (negative) {
+                stringResource(R.string.overview_budget_over, line.remaining.abs().format())
+            } else {
+                stringResource(R.string.overview_budget_remaining, line.remaining.format())
+            },
             style = MaterialTheme.typography.bodyMedium,
             color = color,
         )

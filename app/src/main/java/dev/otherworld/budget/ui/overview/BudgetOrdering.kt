@@ -64,6 +64,12 @@ fun BudgetStatus.atRisk(count: Int = 3): List<BudgetLine> {
     return ranked.filter { it.categoryId !in parents }.take(count)
 }
 
+/**
+ * False when the month has no expense budget to show -- a user who hasn't set budgets up still
+ * gets a status back, with zero totals, and "£0.00 left of £0.00" would read as a real figure.
+ */
+fun BudgetStatus.hasBudgets(): Boolean = byRisk().isNotEmpty()
+
 /** One row of the Budget detail list: a line and how deep it sits under its parents (0 = top). */
 data class BudgetTreeRow(val line: BudgetLine, val depth: Int)
 
