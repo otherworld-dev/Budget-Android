@@ -74,10 +74,25 @@ class CheckRepository @Inject constructor(
         seed(gen)
         refreshLock.withLock {
             if (!isCurrent(gen)) return
+            // Say which sections are about to load *before* waiting on capabilities. That call
+            // goes through the catalog's lock, which a slow accounts fetch from another screen can
+            // hold for a whole read timeout; without this the sections sat blank, no spinner, for
+            // that long (seen on a device). Cleared again if the refresh is cancelled meanwhile.
+            val unmark = mutableListOf<() -> Unit>()
+            fun <T> markLoading(flow: MutableStateFlow<Section<T>>) {
+                if (!force && isFresh(flow.value.fetchedAt)) return   // won't be fetched
+                apply(gen, flow) { it.copy(refreshing = true) }
+                unmark += { apply(gen, flow) { it.copy(refreshing = false) } }
+            }
+            markLoading(_balances); markLoading(_recent); markLoading(_budget); markLoading(_bills)
             // A failure here means no fetch *and* no persisted snapshot (the catalog falls back to
             // one when it can): assume the check is available and let each section fail on its own.
-            val checkAvailable =
+            val checkAvailable = try {
                 catalog.capabilities(forceRefresh = force).getOrNull()?.checkAvailable ?: true
+            } catch (e: CancellationException) {
+                unmark.forEach { it() }
+                throw e
+            }
             coroutineScope {
                 launch { refreshBalances(gen, owner, force) }
                 launch {

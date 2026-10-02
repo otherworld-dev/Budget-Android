@@ -214,6 +214,51 @@ class CheckRepositoryTest {
     }
 
     @Test
+    fun `sections show as loading while capabilities is still answering`() = runTest(dispatcher) {
+        // On a device, capabilities queued behind a hung catalog call and every section sat blank,
+        // with no spinner, for minutes. The sections about to be fetched say so straight away.
+        api.latencyMs = 1000
+
+        launch { repo.refresh() }
+        runCurrent()                               // capabilities requested, nothing answered yet
+
+        assertTrue(repo.balances.value.refreshing)
+        assertTrue(repo.recent.value.refreshing)
+        assertTrue(repo.budget.value.refreshing)
+        assertTrue(repo.bills.value.refreshing)
+        advanceUntilIdle()
+        assertFalse(repo.recent.value.refreshing)
+    }
+
+    @Test
+    fun `a refresh cancelled while capabilities is answering clears the loading state`() = runTest(dispatcher) {
+        api.latencyMs = 1000
+
+        val job = launch { repo.refresh() }
+        runCurrent()
+        job.cancel()
+        advanceUntilIdle()
+
+        assertFalse(repo.balances.value.refreshing)
+        assertFalse(repo.budget.value.refreshing)
+        assertFalse(repo.bills.value.refreshing)
+        assertFalse(repo.recent.value.refreshing)
+    }
+
+    @Test
+    fun `a fresh section is not shown as loading`() = runTest(dispatcher) {
+        repo.refresh()
+        api.latencyMs = 1000
+
+        launch { repo.refresh() }                  // nothing is stale: no fetch, so no spinner
+        runCurrent()
+
+        assertFalse(repo.recent.value.refreshing)
+        assertFalse(repo.balances.value.refreshing)
+        advanceUntilIdle()
+    }
+
+    @Test
     fun `a cancelled refresh does not leave sections refreshing`() = runTest(dispatcher) {
         api.latencyMs = 1000
 
