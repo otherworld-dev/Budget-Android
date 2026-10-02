@@ -81,6 +81,11 @@ fun WelcomeScreen(
             "3",
             stringResource(R.string.welcome_step3_title),
             stringResource(R.string.welcome_step3_body),
+        )
+        WelcomeStep(
+            "4",
+            stringResource(R.string.welcome_step4_title),
+            stringResource(R.string.welcome_step4_body),
             last = true,
         )
 
