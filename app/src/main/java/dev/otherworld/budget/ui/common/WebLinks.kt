@@ -4,10 +4,10 @@ package dev.otherworld.budget.ui.common
  * The one place a Budget web-app URL is built, so every screen that opens one uses the exact
  * same hash rather than each hand-rolling its own copy that could quietly drift apart.
  *
- * [transaction] is the only hash actually verified against the web app's router -- it's what
- * Recent/Activity has opened since before this file existed. [accounts], [budget] and [bills]
- * follow the same `#section` shape by inspection of the same router, for Overview's taps, but
- * are unverified: nothing has opened them for real yet. If one 404s in the web app, fix it here.
+ * All four were opened from the app on a phone against a live server (2026-10-02). [accounts],
+ * [budget] and [bills] land on those pages. [transaction] lands on the Transactions page, but the
+ * web app currently ignores `?id=`, so it shows the list rather than that one transaction. The id
+ * is kept so the link starts working as soon as the web app reads it.
  */
 object WebLinks {
     fun transaction(server: String, id: Long) = "$server/apps/budget/#transactions?id=$id"
