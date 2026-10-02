@@ -104,4 +104,22 @@ class ActivityRowsTest {
         val rows = buildActivityRows(listOf(first, duplicate, other))
         assertEquals(listOf(ActivityRow.Single(first), ActivityRow.Single(other)), rows)
     }
+    @Test fun `a lone outgoing transfer names the account it went to`() {
+        val out = tx(1, Direction.DEBIT, TransferLink(9, "Savings"))
+        assertEquals(TransferRoute.To("Savings"), out.transferRoute())
+    }
+
+    @Test fun `a lone incoming transfer names the account it came from`() {
+        val incoming = tx(1, Direction.CREDIT, TransferLink(9, "Current"))
+        assertEquals(TransferRoute.From("Current"), incoming.transferRoute())
+    }
+
+    @Test fun `a transfer to an account the user can't see stays unnamed`() {
+        val hidden = tx(1, Direction.DEBIT, TransferLink(9, null))
+        assertEquals(TransferRoute.Unnamed, hidden.transferRoute())
+    }
+
+    @Test fun `an ordinary transaction has no transfer route`() {
+        assertEquals(null, tx(1, Direction.DEBIT).transferRoute())
+    }
 }

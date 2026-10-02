@@ -227,7 +227,7 @@ private fun SingleRow(
             AmountText(amount = tx.amount.format(), isCredit = tx.direction == Direction.CREDIT)
         }
         Text(
-            stringResource(R.string.activity_row_subtitle, tx.date.format(dateFormatter), tx.accountName),
+            singleRowSubtitle(tx),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
@@ -242,21 +242,28 @@ private fun SingleRow(
 }
 
 /**
- * The row's title line when it's one half of a transfer whose partner isn't in this page of
- * results -- [tx.merchant] is what the *server* called the transaction (e.g. "Transfer to
- * Savings"), but the structured [dev.otherworld.budget.domain.model.TransferLink] is what the
- * spec asks the row to read instead, so the same wording holds regardless of what a given
- * server happens to name these.
+ * The row's title: the transaction's own description, transfers included. A lone transfer used
+ * to be retitled "Transfer to Savings", which threw away what the user called it ("To savings",
+ * "Rent pot"); seen on a device. Only a blank description falls back to "Transfer".
  */
 @Composable
-private fun singleRowTitle(tx: RecentTransaction): String {
-    val transfer = tx.transfer ?: return tx.merchant
-    val linkedAccountName = transfer.linkedAccountName
-        ?: return stringResource(R.string.activity_transfer)
-    return if (tx.direction == Direction.DEBIT) {
-        stringResource(R.string.activity_transfer_to, linkedAccountName)
-    } else {
-        stringResource(R.string.activity_transfer_from, linkedAccountName)
+private fun singleRowTitle(tx: RecentTransaction): String =
+    if (tx.transfer != null && tx.merchant.isBlank()) stringResource(R.string.activity_transfer) else tx.merchant
+
+/**
+ * "date · account", and for one half of a transfer whose partner isn't in the list, where the
+ * money went instead: "date · Current → Savings" (or "Current → Joint" for money coming in, the
+ * other account first). A transfer into an account the user can't see reads "date · Joint ·
+ * Transfer", since the server leaves that account's name out.
+ */
+@Composable
+private fun singleRowSubtitle(tx: RecentTransaction): String {
+    val date = tx.date.format(dateFormatter)
+    return when (val route = tx.transferRoute()) {
+        null -> stringResource(R.string.activity_row_subtitle, date, tx.accountName)
+        is TransferRoute.To -> stringResource(R.string.activity_row_subtitle_transfer, date, tx.accountName, route.account)
+        is TransferRoute.From -> stringResource(R.string.activity_row_subtitle_transfer, date, route.account, tx.accountName)
+        TransferRoute.Unnamed -> stringResource(R.string.activity_row_subtitle_transfer_unnamed, date, tx.accountName)
     }
 }
 

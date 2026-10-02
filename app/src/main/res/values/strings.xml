@@ -89,8 +89,10 @@
     <string name="activity_dismiss">Dismiss</string>
     <string name="activity_uncategorised">Uncategorised</string>
     <string name="activity_split_chip">Split</string>
-    <string name="activity_transfer_to">Transfer to %1$s</string>
-    <string name="activity_transfer_from">Transfer from %1$s</string>
+    <!-- One half of a transfer: date, then the account the money left and the one it went to. -->
+    <string name="activity_row_subtitle_transfer">%1$s · %2$s → %3$s</string>
+    <!-- A transfer into or out of an account the user can't see: date, own account. -->
+    <string name="activity_row_subtitle_transfer_unnamed">%1$s · %2$s · Transfer</string>
     <string name="activity_transfer">Transfer</string>
     <string name="activity_transfer_pair">%1$s → %2$s</string>
     <string name="activity_updated_just_now">Updated just now</string>
