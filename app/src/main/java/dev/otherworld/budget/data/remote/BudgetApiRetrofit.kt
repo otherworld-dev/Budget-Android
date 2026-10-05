@@ -104,17 +104,23 @@ class BudgetApiRetrofit @Inject constructor(
     }
 
     override suspend fun createTransaction(request: CreateTransactionRequest, idempotencyKey: String) = call({
+        // A refund is typed as a negative amount, but the server refuses one: the direction is
+        // `type`'s job and amounts stay positive. Its split parts flip with it, so they still add
+        // up to the amount sent.
+        val refund = request.total.amount.signum() < 0
+        fun wire(money: Money) = (if (refund) money.amount.negate() else money.amount).toPlainString()
         service.createTransaction(
             idempotencyKey = idempotencyKey,
             accountId = request.accountId.toString().text(),
             categoryId = request.categoryId?.toString()?.text(),
             date = request.date.toString().text(),
             merchant = request.merchant.text(),
-            amount = request.total.amount.toPlainString().text(),
+            amount = wire(request.total).text(),
+            type = if (refund) "credit".text() else null,
             // Omitted entirely when there are no splits (an ordinary, single-category save) rather
             // than sent as an empty array -- exactly like `photo` below.
             splits = request.splits?.let { parts ->
-                splitsJson.encodeToString(parts.map { SplitWireDto(it.amount.amount.toPlainString(), it.categoryId, it.description) }).text()
+                splitsJson.encodeToString(parts.map { SplitWireDto(wire(it.amount), it.categoryId, it.description) }).text()
             },
             // Omitted entirely when there is no photo (a Quick Add manual entry) rather than sent
             // as an empty part: an empty `photo` would arrive server-side as a zero-byte upload,
@@ -132,7 +138,7 @@ class BudgetApiRetrofit @Inject constructor(
         if (dto.idempotencyKey != null && dto.idempotencyKey != idempotencyKey) {
             throw BudgetApiError.ServerError(0)
         }
-        CreatedTransaction(dto.id, dto.splitsError)
+        CreatedTransaction(dto.id, dto.splitsError, dto.categoryError)
     }
 
     override suspend fun budgetStatus(month: String?) = call({ service.budgetStatus(month) }) { dto ->

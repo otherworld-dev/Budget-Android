@@ -5,6 +5,7 @@ import dev.otherworld.budget.data.remote.fake.FakeCheckData
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -93,6 +94,14 @@ class FakeBudgetApiTest {
             dev.otherworld.budget.domain.model.Money(java.math.BigDecimal("1.00"), "GBP"), 14, "X"))
         api.createTransaction(request().copy(splits = parts), "k").getOrThrow()
         assertEquals(parts, api.created.single().splits)
+    }
+
+    @Test
+    fun `a dropped category is reported on the create, not again on a replay`() = runTest {
+        // Like the server: the replay joins the transaction already recorded without its category.
+        val api = FakeBudgetApi(categoryError = "Category not found")
+        assertEquals("Category not found", api.createTransaction(request(), "key-1").getOrThrow().categoryError)
+        assertNull(api.createTransaction(request(), "key-1").getOrThrow().categoryError)
     }
 
     @Test

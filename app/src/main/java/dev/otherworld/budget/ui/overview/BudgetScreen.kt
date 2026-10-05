@@ -146,10 +146,21 @@ private fun BudgetDetailRow(line: BudgetLine, depth: Int, onOpen: () -> Unit) {
     ) {
         Text(line.name, style = MaterialTheme.typography.bodyLarge)
         Text(
-            withPeriod(line, stringResource(R.string.overview_budget_line, line.spent.format(), line.budgeted.format())),
+            stringResource(R.string.overview_budget_line, line.spent.format(), line.budgeted.format()),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        // A quarterly or yearly budget's figures above are the month's share; this is its whole
+        // quarter or year so far, as the web Budget page shows beside them.
+        val toDate = line.periodToDate
+        val toDateRes = periodToDateLabelRes(line.period)
+        if (toDate != null && toDateRes != null) {
+            Text(
+                stringResource(toDateRes, toDate.spent.format(), toDate.budgeted.format()),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         Text(
             if (negative) {
                 stringResource(R.string.overview_budget_over, line.remaining.abs().format())

@@ -267,6 +267,21 @@ class ReviewViewModelTest {
         assertEquals("Saved, but couldn't split it by item.", vm.uiState.value.postNotice)
     }
 
+    @Test
+    fun `a save whose category the server dropped still finishes but notifies`() = runTest(dispatcher) {
+        val queue = FakeReviewQueue(
+            PendingReceipt(1, "/tmp/r.jpg", 0, CaptureState.AWAITING_REVIEW, draft(), 0, null),
+            postResult = Result.success(
+                dev.otherworld.budget.data.remote.CreatedTransaction(9002L, null, categoryError = "Category not found"),
+            ),
+        )
+        val (vm, _) = viewModel(queue = queue); advanceUntilIdle()
+        vm.onSaveClicked(); advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.saved)
+        assertEquals("Saved without a category: that one can't be used on this account.", vm.uiState.value.postNotice)
+    }
+
     // --- Split state and reconciliation gating ----------------------------------------------
 
     @Test

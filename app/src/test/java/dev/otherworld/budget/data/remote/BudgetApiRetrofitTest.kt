@@ -298,6 +298,91 @@ class BudgetApiRetrofitTest {
         assertFalse(server.takeRequest().body.readUtf8().contains("""name="splits""""))
     }
 
+    /** The value of one text part of a multipart body, or null when the part isn't there. */
+    private fun partValue(body: String, name: String): String? =
+        Regex("""name="$name"[\s\S]*?\r\n\r\n(.*?)\r\n""").find(body)?.groupValues?.get(1)
+
+    @Test
+    fun `a negative total is sent as a credit of the positive amount`() = runTest {
+        // The server refuses a negative amount (400) and wants type to carry the direction.
+        server.enqueue(ok("""{"id":9002}"""))
+        api.createTransaction(txnRequest().copy(total = Money(BigDecimal("-5.00"), "GBP")), idempotencyKey = "k").getOrThrow()
+
+        val body = server.takeRequest().body.readUtf8()
+        assertEquals("5.00", partValue(body, "amount"))
+        assertEquals("credit", partValue(body, "type"))
+    }
+
+    @Test
+    fun `a positive total sends no type, leaving the body as it always was`() = runTest {
+        // A row queued before this change may already be on the server under its key, so its
+        // replay must not change shape.
+        server.enqueue(ok("""{"id":9002}"""))
+        api.createTransaction(txnRequest(), idempotencyKey = "k").getOrThrow()
+
+        val body = server.takeRequest().body.readUtf8()
+        assertEquals("1.00", partValue(body, "amount"))
+        assertNull(partValue(body, "type"))
+    }
+
+    @Test
+    fun `a negative split total flips its parts too, so they still add up to the amount`() = runTest {
+        server.enqueue(ok("""{"id":9002}"""))
+        api.createTransaction(
+            txnRequest().copy(
+                total = Money(BigDecimal("-4.82"), "GBP"),
+                splits = listOf(
+                    dev.otherworld.budget.domain.model.SplitPart(Money(BigDecimal("-3.40"), "GBP"), 12, "Flat White"),
+                    dev.otherworld.budget.domain.model.SplitPart(Money(BigDecimal("-1.42"), "GBP"), null, "Tax"),
+                ),
+            ),
+            idempotencyKey = "k",
+        ).getOrThrow()
+
+        val body = server.takeRequest().body.readUtf8()
+        assertEquals("4.82", partValue(body, "amount"))
+        assertEquals("credit", partValue(body, "type"))
+        assertTrue(body.contains(""""amount":"3.40""""))
+        assertTrue(body.contains(""""amount":"1.42""""))
+        assertFalse(body.contains(""""amount":"-"""))
+    }
+
+    @Test
+    fun `createTransaction surfaces category_error while still succeeding`() = runTest {
+        // The server keeps a capture whose category the account's owner can't use, uncategorised.
+        server.enqueue(ok("""{"id":9002,"category_error":"Category not found. It must be one of the account owner's categories"}"""))
+        val created = api.createTransaction(txnRequest().copy(categoryId = 14), idempotencyKey = "k").getOrThrow()
+        assertEquals(9002L, created.id)
+        assertEquals("Category not found. It must be one of the account owner's categories", created.categoryError)
+    }
+
+    @Test
+    fun `a crypto row keeps its eight decimal places instead of vanishing from Activity`() = runTest {
+        server.enqueue(ok("""
+            [{"id":1,"merchant":"Exchange","date":"2026-10-01","amount":"0.02200000","currency":"BTC","account_name":"Wallet",
+              "account_id":3,"type":"credit","category_name":null,
+              "splits":[{"amount":"0.02000000","category_name":"Savings"},{"amount":"0.00200000","category_name":null}]}]
+        """.trimIndent()))
+
+        val row = api.recentTransactions().getOrThrow().single()
+
+        assertEquals(BigDecimal("0.02200000"), row.amount.amount)
+        assertEquals(listOf(BigDecimal("0.02000000"), BigDecimal("0.00200000")), row.splits.map { it.amount.amount })
+    }
+
+    @Test
+    fun `a balance in a three-place currency is read, not left blank`() = runTest {
+        server.enqueue(ok("""
+            [{"id":4,"name":"Amman","currency":"JOD","type":"checking","balance":"1250.500",
+              "balance_in_base_currency":"1384.12","base_currency":"GBP"}]
+        """.trimIndent()))
+
+        val account = api.accounts().getOrThrow().single()
+
+        assertEquals(BigDecimal("1250.500"), account.balance!!.amount)
+        assertEquals(BigDecimal("1384.12"), account.balanceInBase!!.amount)
+    }
+
     @Test
     fun `cancelling an in-flight call propagates the cancellation instead of fabricating a result`() {
         // Against the real Retrofit/OkHttp stack, not a fake: the fakes in the repository tests
@@ -433,6 +518,27 @@ class BudgetApiRetrofitTest {
         assertEquals(BigDecimal("537.60"), status.remaining.amount)
         assertEquals(BigDecimal("-31.20"), status.lines[0].remaining.amount)
         assertEquals(LocalDate.of(2026, 9, 1), status.startDate)
+    }
+
+    @Test
+    fun `budget status reads a yearly line's year so far, and none for a monthly one`() = runTest {
+        server.enqueue(ok("""
+            {"month":"2026-10","start_date":"2026-10-01","end_date":"2026-10-31","currency":"GBP",
+             "totals":{"budgeted":"500.00","spent":"100.00","remaining":"400.00"},
+             "categories":[
+               {"category_id":20,"name":"Car","parent_id":null,"type":"expense","period":"yearly",
+                "budgeted":"100.00","carried":"0.00","spent":"100.00","remaining":"0.00","shared":false,
+                "period_to_date":{"start_date":"2026-01-01","end_date":"2026-12-31","budgeted":"1200.00","spent":"400.00"}},
+               {"category_id":12,"name":"Groceries","parent_id":null,"type":"expense","period":"monthly",
+                "budgeted":"400.00","carried":"0.00","spent":"0.00","remaining":"400.00","shared":false,
+                "period_to_date":null}]}
+        """.trimIndent()))
+
+        val (car, groceries) = api.budgetStatus().getOrThrow().lines
+
+        assertEquals(BigDecimal("1200.00"), car.periodToDate!!.budgeted.amount)
+        assertEquals(BigDecimal("400.00"), car.periodToDate!!.spent.amount)
+        assertNull(groceries.periodToDate)
     }
 
     @Test

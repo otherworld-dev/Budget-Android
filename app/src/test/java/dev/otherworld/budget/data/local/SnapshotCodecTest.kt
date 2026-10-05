@@ -2,6 +2,9 @@ package dev.otherworld.budget.data.local
 
 import dev.otherworld.budget.data.remote.fake.FakeCheckData
 import dev.otherworld.budget.domain.model.Account
+import dev.otherworld.budget.domain.model.BudgetLine
+import dev.otherworld.budget.domain.model.Money
+import dev.otherworld.budget.domain.model.PeriodToDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -60,6 +63,26 @@ class SnapshotCodecTest {
         assertEquals(FakeCheckData.budget, back)
         // The Groceries line is overspent -- remaining is negative and must survive as sent.
         assertEquals(BigDecimal("-31.20"), back.lines.first { it.categoryId == 14L }.remaining.amount)
+    }
+
+    @Test fun `a yearly line's year so far survives the cache`() {
+        fun gbp(v: String) = Money(BigDecimal(v), "GBP")
+        val yearly = BudgetLine(20, "Car", null, "expense", "yearly",
+            gbp("100.00"), gbp("0.00"), gbp("100.00"), gbp("0.00"), false,
+            periodToDate = PeriodToDate(budgeted = gbp("1200.00"), spent = gbp("400.00")))
+        val budget = FakeCheckData.budget.copy(lines = FakeCheckData.budget.lines + yearly)
+
+        val back = SnapshotCodec.decodeBudget(SnapshotCodec.encodeBudget(budget))!!
+
+        assertEquals(PeriodToDate(gbp("1200.00"), gbp("400.00")), back.lines.first { it.categoryId == 20L }.periodToDate)
+    }
+
+    @Test fun `a budget cached before the year so far existed still decodes`() {
+        // What the previous app version wrote: every line, no periodToDate key at all.
+        val cached = SnapshotCodec.encodeBudget(FakeCheckData.budget).replace(""","periodToDate":null""", "")
+        assertFalse(cached.contains("periodToDate"))
+
+        assertEquals(FakeCheckData.budget, SnapshotCodec.decodeBudget(cached))
     }
 
     @Test fun `upcoming bills round-trip`() {

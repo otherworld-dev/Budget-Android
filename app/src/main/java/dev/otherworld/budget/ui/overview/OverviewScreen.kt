@@ -268,14 +268,11 @@ internal fun AtRiskRow(line: BudgetLine, onOpen: () -> Unit) {
     Column(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen).padding(vertical = 4.dp)) {
         Text(line.name, style = MaterialTheme.typography.bodyMedium)
         Text(
-            withPeriod(
-                line,
-                if (negative) {
-                    stringResource(R.string.overview_budget_over, line.remaining.abs().format())
-                } else {
-                    stringResource(R.string.overview_budget_line, line.spent.format(), line.budgeted.format())
-                },
-            ),
+            if (negative) {
+                stringResource(R.string.overview_budget_over, line.remaining.abs().format())
+            } else {
+                stringResource(R.string.overview_budget_line, line.spent.format(), line.budgeted.format())
+            },
             style = MaterialTheme.typography.bodySmall,
             color = color,
         )
@@ -327,13 +324,6 @@ private fun BillItemRow(row: BillRow, onOpen: () -> Unit) {
         )
     }
 }
-
-/** [text] with the line's period appended when it isn't monthly -- see [budgetPeriodLabelRes]. */
-@Composable
-internal fun withPeriod(line: BudgetLine, text: String): String =
-    budgetPeriodLabelRes(line.period)
-        ?.let { stringResource(R.string.overview_budget_with_period, text, stringResource(it)) }
-        ?: text
 
 @Composable
 private fun dueLabelText(label: DueLabel): String = when (label) {

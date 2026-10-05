@@ -23,6 +23,7 @@ class FakeStringResources : StringResources {
         R.string.capture_ocr_unavailable to
             "Receipt scanning isn't set up on your Budget server — see Budget's settings in Nextcloud.",
         R.string.review_split_saved_error to "Saved, but couldn't split it by item.",
+        R.string.save_category_dropped to "Saved without a category: that one can't be used on this account.",
         R.string.onboarding_no_browser to "No browser is available to finish signing in.",
         R.string.onboarding_server_unreachable to
             "Couldn't reach that server. Check the address and try again.",

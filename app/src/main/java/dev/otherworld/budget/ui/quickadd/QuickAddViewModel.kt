@@ -36,6 +36,11 @@ data class QuickAddUiState(
     val selectedCategoryId: Long? = null,
     val saving: Boolean = false,
     val saved: Boolean = false,
+    /**
+     * A one-shot notice for a save that succeeded without its category, which the server drops
+     * when the account's owner can't use it. Shown as the screen closes, like Review's.
+     */
+    val postNotice: String? = null,
     val amountError: String? = null,
     val saveError: String? = null,
     /**
@@ -210,9 +215,12 @@ class QuickAddViewModel @Inject constructor(
                     total = total,
                     photo = null,
                 ),
-            ).onSuccess {
+            ).onSuccess { created ->
                 lastAccount.set(accountId)
-                _uiState.update { it.copy(saving = false, saved = true) }
+                _uiState.update { it.copy(
+                    saving = false, saved = true,
+                    postNotice = created.categoryError?.let { strings.get(R.string.save_category_dropped) },
+                ) }
             }.onFailure { error ->
                 // handedToQueue, not just an error message: the row is durable in every failure
                 // reachable here (FAILED, which PostWorker re-posts unattended, or AWAITING_REVIEW,

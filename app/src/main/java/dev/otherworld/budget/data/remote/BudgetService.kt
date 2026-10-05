@@ -62,6 +62,12 @@ interface BudgetService {
         @Part("merchant") merchant: RequestBody,
         @Part("amount") amount: RequestBody,
         /**
+         * `"credit"` for a refund, sent with the amount made positive: the server refuses a
+         * negative amount. Omitted (null) otherwise, which the server reads as a debit -- so an
+         * ordinary purchase's body is exactly what it was before this part existed.
+         */
+        @Part("type") type: RequestBody?,
+        /**
          * A JSON array string, e.g. `[{"amount":"3.40","category_id":12,"description":"Flat
          * White"},{"amount":"1.42","description":"Tax"}]`. Omitted (null) for a single-category
          * save, exactly like [photo] -- not sent as an empty array.

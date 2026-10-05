@@ -46,10 +46,10 @@ import java.time.LocalDate
         name = name,
         currency = currency,
         type = type,
-        balance = balance?.let { Money.parse(it, currency) },
+        balance = balance?.let { Money.fromServer(it, currency) },
         // Only parsed when both the converted figure and its currency are present -- one
         // without the other isn't a value this app can render.
-        balanceInBase = if (balanceInBase != null && baseCurrency != null) Money.parse(balanceInBase, baseCurrency) else null,
+        balanceInBase = if (balanceInBase != null && baseCurrency != null) Money.fromServer(balanceInBase, baseCurrency) else null,
         closed = closed,
         shared = shared,
     )
@@ -62,7 +62,7 @@ import java.time.LocalDate
 ) { fun toDomain() = Category(id, name, parentId) }
 
 @Serializable data class LineItemDto(val description: String, val amount: String? = null) {
-    fun toDomain(currency: String) = LineItem(description, amount?.let { Money.parse(it, currency) })
+    fun toDomain(currency: String) = LineItem(description, amount?.let { Money.fromServer(it, currency) })
 }
 
 @Serializable data class DraftDto(
@@ -81,12 +81,12 @@ import java.time.LocalDate
         return DraftTransaction(
             merchant = merchant,
             date = date?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
-            total = total?.let { Money.parse(it, ccy) },
+            total = total?.let { Money.fromServer(it, ccy) },
             suggestedCategoryId = suggestedCategoryId,
             lineItems = lineItems.map { it.toDomain(ccy) },
-            subtotal = subtotal?.let { Money.parse(it, ccy) },
-            tax = tax?.let { Money.parse(it, ccy) },
-            discount = discount?.let { Money.parse(it, ccy) },
+            subtotal = subtotal?.let { Money.fromServer(it, ccy) },
+            tax = tax?.let { Money.fromServer(it, ccy) },
+            discount = discount?.let { Money.fromServer(it, ccy) },
         )
     }
 }
@@ -103,7 +103,7 @@ import java.time.LocalDate
     val description: String? = null,
 ) {
     fun toDomain(currency: String): SplitLine? {
-        val parsedAmount = Money.parse(amount, currency) ?: return null
+        val parsedAmount = Money.fromServer(amount, currency) ?: return null
         return SplitLine(parsedAmount, categoryName, description)
     }
 }
@@ -126,7 +126,7 @@ import java.time.LocalDate
 ) {
     fun toDomain(): RecentTransaction? {
         val parsedDate = runCatching { LocalDate.parse(date) }.getOrNull() ?: return null
-        val parsedAmount = Money.parse(amount, currency) ?: return null
+        val parsedAmount = Money.fromServer(amount, currency) ?: return null
         val direction = when (type) {
             "debit" -> Direction.DEBIT
             "credit" -> Direction.CREDIT
@@ -162,6 +162,10 @@ import java.time.LocalDate
     // problem, which is always until splits are actually sent. The 201 also now carries `splits`,
     // `is_split` and `photo_error`, which stay unmodelled: the Retrofit Json ignores unknown keys.
     @SerialName("splits_error") val splitsError: String? = null,
+    // Present when the server kept the transaction but not its category, because the account's
+    // owner can't use it (one of the caller's own on someone else's shared account). It is saved
+    // uncategorised rather than refused.
+    @SerialName("category_error") val categoryError: String? = null,
 )
 
 @Serializable data class ErrorDataDto(@SerialName("error_code") val errorCode: String? = null)
@@ -191,14 +195,33 @@ import java.time.LocalDate
     val spent: String,
     val remaining: String,
     val shared: Boolean = false,
+    // A quarterly or yearly line's whole period so far; null for any other period, and absent on
+    // a server from before every line was measured over the month.
+    @SerialName("period_to_date") val periodToDate: PeriodToDateDto? = null,
 ) {
-    /** Drops the line -- rather than fail the whole [BudgetStatusDto] -- when any amount doesn't parse. */
+    /**
+     * Drops the line -- rather than fail the whole [BudgetStatusDto] -- when any amount doesn't
+     * parse. A period so far that doesn't parse is left out on its own: the month's figures are
+     * the line, that is only context beside them.
+     */
     fun toDomain(currency: String): BudgetLine? {
-        val budgetedM = Money.parse(budgeted, currency) ?: return null
-        val carriedM = Money.parse(carried, currency) ?: return null
-        val spentM = Money.parse(spent, currency) ?: return null
-        val remainingM = Money.parse(remaining, currency) ?: return null
-        return BudgetLine(categoryId, name, parentId, type, period, budgetedM, carriedM, spentM, remainingM, shared)
+        val budgetedM = Money.fromServer(budgeted, currency) ?: return null
+        val carriedM = Money.fromServer(carried, currency) ?: return null
+        val spentM = Money.fromServer(spent, currency) ?: return null
+        val remainingM = Money.fromServer(remaining, currency) ?: return null
+        return BudgetLine(
+            categoryId, name, parentId, type, period, budgetedM, carriedM, spentM, remainingM, shared,
+            periodToDate = periodToDate?.toDomain(currency),
+        )
+    }
+}
+
+/** `period_to_date` on a budget line: the quarter or year so far. Its dates aren't read. */
+@Serializable data class PeriodToDateDto(val budgeted: String, val spent: String) {
+    fun toDomain(currency: String): PeriodToDate? {
+        val budgetedM = Money.fromServer(budgeted, currency) ?: return null
+        val spentM = Money.fromServer(spent, currency) ?: return null
+        return PeriodToDate(budgetedM, spentM)
     }
 }
 
@@ -222,9 +245,9 @@ import java.time.LocalDate
     fun toDomain(): BudgetStatus? {
         val start = runCatching { LocalDate.parse(startDate) }.getOrNull() ?: return null
         val end = runCatching { LocalDate.parse(endDate) }.getOrNull() ?: return null
-        val budgetedM = Money.parse(totals.budgeted, currency) ?: return null
-        val spentM = Money.parse(totals.spent, currency) ?: return null
-        val remainingM = Money.parse(totals.remaining, currency) ?: return null
+        val budgetedM = Money.fromServer(totals.budgeted, currency) ?: return null
+        val spentM = Money.fromServer(totals.spent, currency) ?: return null
+        val remainingM = Money.fromServer(totals.remaining, currency) ?: return null
         return BudgetStatus(
             month = month,
             startDate = start,
@@ -258,7 +281,7 @@ import java.time.LocalDate
     /** Null when the due date or amount fails to parse -- dropped from the list rather than crashing it. */
     fun toDomain(): UpcomingBill? {
         val parsedDate = runCatching { LocalDate.parse(nextDueDate) }.getOrNull() ?: return null
-        val parsedAmount = Money.parse(amount, currency) ?: return null
+        val parsedAmount = Money.fromServer(amount, currency) ?: return null
         return UpcomingBill(
             id, name, parsedAmount, parsedDate, overdue, frequency, accountName, isTransfer, autoPay, shared,
             // An older server omits amount_type; with nothing saying otherwise the amount is exact.

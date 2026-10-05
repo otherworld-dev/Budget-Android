@@ -7,6 +7,7 @@ import dev.otherworld.budget.domain.model.BudgetStatus
 import dev.otherworld.budget.domain.model.Category
 import dev.otherworld.budget.domain.model.Direction
 import dev.otherworld.budget.domain.model.Money
+import dev.otherworld.budget.domain.model.PeriodToDate
 import dev.otherworld.budget.domain.model.RecentTransaction
 import dev.otherworld.budget.domain.model.SplitLine
 import dev.otherworld.budget.domain.model.TransferLink
@@ -103,15 +104,21 @@ object SnapshotCodec {
         val spent: MoneyDto,
         val remaining: MoneyDto,
         val shared: Boolean,
+        // Defaulted: a budget cached by an app version without it still decodes.
+        val periodToDate: PeriodToDateDto? = null,
     )
+
+    @Serializable private data class PeriodToDateDto(val budgeted: MoneyDto, val spent: MoneyDto)
 
     private fun BudgetLine.toDto() = BudgetLineDto(
         categoryId, name, parentId, type, period,
         budgeted.toDto(), carried.toDto(), spent.toDto(), remaining.toDto(), shared,
+        periodToDate?.let { PeriodToDateDto(it.budgeted.toDto(), it.spent.toDto()) },
     )
     private fun BudgetLineDto.toDomain() = BudgetLine(
         categoryId, name, parentId, type, period,
         budgeted.toDomain(), carried.toDomain(), spent.toDomain(), remaining.toDomain(), shared,
+        periodToDate?.let { PeriodToDate(it.budgeted.toDomain(), it.spent.toDomain()) },
     )
 
     @Serializable private data class BudgetStatusDto(
