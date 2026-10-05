@@ -125,12 +125,10 @@
     <string name="overview_budget_over">%1$s over</string>
     <string name="overview_budget_remaining">%1$s left</string>
     <string name="overview_budget_none">No budgets set for this month. Set them up in Budget on the web.</string>
-    <!-- A weekly, quarterly or yearly line's figures cover its own period, not the month:
-         "£40.00 of £50.00 · this week". -->
-    <string name="overview_budget_with_period">%1$s · %2$s</string>
-    <string name="overview_period_weekly">this week</string>
-    <string name="overview_period_quarterly">this quarter</string>
-    <string name="overview_period_yearly">this year</string>
+    <!-- A quarterly or yearly budget's whole period so far, under the month's share of it:
+         "£400.00 of £1,200.00 this year". -->
+    <string name="overview_budget_this_quarter">%1$s of %2$s this quarter</string>
+    <string name="overview_budget_this_year">%1$s of %2$s this year</string>
     <!-- A variable bill: the server only knows the real amount once it's paid. -->
     <string name="overview_bill_estimate">est. %1$s</string>
     <string name="overview_due_overdue">Overdue</string>
@@ -204,6 +202,7 @@
     <string name="review_split_unavailable">Can\'t split this by item — the items don\'t add up to the total.</string>
     <string name="review_extract_failed">Couldn\'t read this receipt — enter the details below.</string>
     <string name="review_split_saved_error">Saved, but couldn\'t split it by item.</string>
+    <string name="save_category_dropped">Saved without a category: that one can\'t be used on this account.</string>
     <string name="onboarding_no_browser">No browser is available to finish signing in.</string>
     <string name="onboarding_server_unreachable">Couldn\'t reach that server. Check the address and try again.</string>
     <string name="activity_error_offline">Couldn\'t reach your Budget server.</string>

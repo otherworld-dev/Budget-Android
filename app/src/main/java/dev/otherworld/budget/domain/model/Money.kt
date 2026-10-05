@@ -7,15 +7,35 @@ import java.util.Locale
 
 data class Money(val amount: BigDecimal, val currency: String) {
 
-    fun format(locale: Locale = Locale.getDefault()): String =
-        NumberFormat.getCurrencyInstance(locale).apply {
-            runCatching { this.currency = Currency.getInstance(this@Money.currency) }
-        }.format(amount)
+    /**
+     * A code Java doesn't know -- the server's crypto currencies (BTC, ETH, USDT, ...) aren't ISO
+     * 4217 -- is written as the number and the code. Falling back to the locale's currency
+     * formatter instead showed 0.022 BTC as "£0.02": the wrong symbol, rounded to its places.
+     */
+    fun format(locale: Locale = Locale.getDefault()): String {
+        val known = runCatching { Currency.getInstance(currency) }.getOrNull()
+            ?: return NumberFormat.getNumberInstance(locale).apply {
+                minimumFractionDigits = 2
+                maximumFractionDigits = maxOf(2, amount.stripTrailingZeros().scale())
+            }.format(amount) + " " + currency
+        return NumberFormat.getCurrencyInstance(locale).apply { this.currency = known }.format(amount)
+    }
 
     companion object {
+        private val SERVER_DECIMAL = Regex("""-?\d+(\.\d+)?""")
+
         /**
-         * Lenient parse for both server payloads ("24.31") and user typing ("£1,234.56",
-         * "24,31", "-5.00" for a refund). Returns null rather than throwing -- an unreadable
+         * A figure from the server, which is always a plain decimal string in the currency's own
+         * places: "24.31", "-31.20", "0.02200000" for BTC, "12.500" for JOD. Read exactly as
+         * written, unlike [parse], which is for what the user types and takes "1.234" as grouped
+         * thousands and anything past two places as a typo. Null for anything else.
+         */
+        fun fromServer(raw: String, currency: String): Money? =
+            if (SERVER_DECIMAL.matches(raw)) Money(BigDecimal(raw), currency) else null
+
+        /**
+         * Lenient parse for what the user types ("£1,234.56", "24,31", "-5.00" for a refund);
+         * server figures go through [fromServer]. Returns null rather than throwing -- an unreadable
          * total is a validation state the review screen renders, not an exception.
          *
          * A single leading '-' is honoured and carried through to the resulting

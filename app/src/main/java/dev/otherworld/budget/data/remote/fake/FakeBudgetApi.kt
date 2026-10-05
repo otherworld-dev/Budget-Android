@@ -24,6 +24,8 @@ class FakeBudgetApi(
      * splits are actually sent.
      */
     var splitsError: String? = null,
+    /** Like [splitsError], for a category the server dropped: reported on a new create only. */
+    var categoryError: String? = null,
     /** Absent (false) on an older server -- see [Capabilities.checkAvailable]. */
     var checkAvailable: Boolean = true,
     var budgetResult: BudgetStatus = FakeCheckData.budget,
@@ -141,7 +143,7 @@ class FakeBudgetApi(
             created += request
             val id = nextTransactionId++
             if (idempotencyKey.isNotBlank()) committedByKey[idempotencyKey] = id
-            CreatedTransaction(id, splitsError)
+            CreatedTransaction(id, splitsError, categoryError)
         }
     }
 

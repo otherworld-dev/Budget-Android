@@ -1,5 +1,6 @@
 package dev.otherworld.budget.ui.quickadd
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -36,6 +37,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -65,11 +67,18 @@ fun QuickAddScreen(
     onDone: () -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     // rememberSaveable so an open date picker survives a rotation instead of vanishing.
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(uiState.saved) {
-        if (uiState.saved) onDone()
+        if (uiState.saved) {
+            // Shown just before closing, as Review does, so it outlives the screen.
+            uiState.postNotice?.let { message ->
+                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            }
+            onDone()
+        }
     }
 
     Scaffold(

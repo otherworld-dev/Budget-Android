@@ -9,6 +9,7 @@ import dev.otherworld.budget.core.StringResources
 import dev.otherworld.budget.data.prefs.LastAccountStore
 import dev.otherworld.budget.data.remote.BudgetApiError
 import dev.otherworld.budget.data.remote.CreateTransactionRequest
+import dev.otherworld.budget.data.remote.CreatedTransaction
 import dev.otherworld.budget.data.repo.CatalogRepository
 import dev.otherworld.budget.data.repo.PostAlreadyInFlightException
 import dev.otherworld.budget.data.repo.ReceiptQueue
@@ -64,10 +65,10 @@ data class ReviewUiState(
     val totalError: String? = null,
     val saveError: String? = null,
     /**
-     * A one-shot notice for a save that *succeeded* but whose per-item splits the server rejected
-     * (the transaction was still recorded). Distinct from [saveError], which is a failure to record
-     * at all: this fires alongside [saved] = true and the screen surfaces it on its way out. Null
-     * whenever splits were fine -- which, until splits are actually sent, is always.
+     * A one-shot notice for a save that *succeeded* but whose per-item splits, or category, the
+     * server dropped (the transaction was still recorded). Distinct from [saveError], which is a
+     * failure to record at all: this fires alongside [saved] = true and the screen surfaces it on
+     * its way out. Null whenever the server kept everything.
      */
     val postNotice: String? = null,
     /**
@@ -429,12 +430,22 @@ class ReviewViewModel @Inject constructor(
                 lastAccount.set(accountId)
                 _uiState.update { it.copy(
                     saving = false, saved = true,
-                    postNotice = created.splitsError?.let { strings.get(R.string.review_split_saved_error) },
+                    postNotice = postNoticeFor(created),
                 ) }
             }.onFailure { error ->
                 _uiState.update { it.copy(saving = false, saveError = messageFor(error)) }
             }
         }
+    }
+
+    /**
+     * A split post omits the top-level category, so at most one of these can happen; the split
+     * notice is checked first all the same.
+     */
+    private fun postNoticeFor(created: CreatedTransaction): String? = when {
+        created.splitsError != null -> strings.get(R.string.review_split_saved_error)
+        created.categoryError != null -> strings.get(R.string.save_category_dropped)
+        else -> null
     }
 
     fun onDiscardClicked() = viewModelScope.launch {

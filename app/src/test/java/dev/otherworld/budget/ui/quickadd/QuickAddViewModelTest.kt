@@ -168,6 +168,30 @@ class QuickAddViewModelTest {
         assertEquals(2L, lastAccount.get())
     }
 
+    @Test
+    fun `a save whose category the server dropped still finishes but notifies`() = runTest(dispatcher) {
+        val queue = FakeQuickAddQueue().apply {
+            postResult = Result.success(CreatedTransaction(9002L, null, categoryError = "Category not found"))
+        }
+        val (vm, _) = viewModel(queue = queue); advanceUntilIdle()
+        vm.enterMinimum()
+        vm.onCategorySelected(15)
+        vm.onSaveClicked(); advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.saved)
+        assertEquals("Saved without a category: that one can't be used on this account.", vm.uiState.value.postNotice)
+    }
+
+    @Test
+    fun `an ordinary save has nothing to say on the way out`() = runTest(dispatcher) {
+        val (vm, _) = viewModel(); advanceUntilIdle()
+        vm.enterMinimum()
+        vm.onSaveClicked(); advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.saved)
+        assertNull(vm.uiState.value.postNotice)
+    }
+
     // --- The architectural rule: everything goes through the queue -------------------------
 
     @Test

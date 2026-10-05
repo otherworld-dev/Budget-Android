@@ -30,6 +30,10 @@ data class TransferLink(val linkedTransactionId: Long, val linkedAccountName: St
  * [remaining] can go negative -- an overspent category -- and that figure is exactly what the
  * server folds into [BudgetStatus.remaining]: the app must always display it as sent, never
  * re-derive it as `budgeted - spent`, so the same number matches the web Budget page.
+ *
+ * Every figure is the month's whatever the [period]: a weekly budget counts as 52/12 of its
+ * amount, a quarterly one a third and a yearly one a twelfth, against the month's spending.
+ * [periodToDate] adds a quarterly or yearly line's whole period so far, and is null otherwise.
  */
 data class BudgetLine(
     val categoryId: Long,
@@ -42,7 +46,11 @@ data class BudgetLine(
     val spent: Money,
     val remaining: Money,
     val shared: Boolean,
+    val periodToDate: PeriodToDate? = null,
 )
+
+/** A quarterly or yearly budget's whole quarter or year: its full [budgeted] amount and [spent] so far. */
+data class PeriodToDate(val budgeted: Money, val spent: Money)
 
 /**
  * The user's current budget month, from `GET /budget/status` (spec §1.2). [month] is the

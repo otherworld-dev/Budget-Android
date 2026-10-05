@@ -29,8 +29,12 @@ data class Capabilities(
  * this is a success carrying a caveat, not a failure. Null when there was no split problem -- which,
  * until splits are actually sent, is always. A replay of an already-seen idempotency key never
  * re-reports a split error.
+ *
+ * [categoryError] is the same kind of caveat for the category: the account's owner can't use the
+ * one chosen (one of the caller's own, on someone else's shared account), so the server recorded
+ * the transaction without it. Null otherwise, and on an older server, which refused the post.
  */
-data class CreatedTransaction(val id: Long, val splitsError: String?)
+data class CreatedTransaction(val id: Long, val splitsError: String?, val categoryError: String? = null)
 
 data class CreateTransactionRequest(
     val accountId: Long,
