@@ -1,14 +1,23 @@
 package dev.otherworld.budget.data.auth
 
+import androidx.room.Room
+import androidx.test.core.app.ApplicationProvider
+import dev.otherworld.budget.RobolectricTestApplication
+import dev.otherworld.budget.data.local.AppDatabase
+import dev.otherworld.budget.data.local.SnapshotDao
+import dev.otherworld.budget.data.local.SnapshotKind
 import dev.otherworld.budget.data.remote.CreateTransactionRequest
 import dev.otherworld.budget.data.remote.CreatedTransaction
 import dev.otherworld.budget.data.remote.TestApiFactory
 import dev.otherworld.budget.data.remote.fake.FakeBudgetApi
 import dev.otherworld.budget.data.repo.CatalogRepository
+import dev.otherworld.budget.data.repo.CheckRepository
 import dev.otherworld.budget.data.repo.ExtractOutcome
 import dev.otherworld.budget.data.prefs.LastServerStore
 import dev.otherworld.budget.data.repo.PendingReceipt
 import dev.otherworld.budget.data.repo.ReceiptQueue
+import dev.otherworld.budget.data.repo.SnapshotStore
+import dev.otherworld.budget.data.repo.TestSnapshots
 import dev.otherworld.budget.data.theme.FakeThemePalette
 import dev.otherworld.budget.domain.model.DraftTransaction
 import dev.otherworld.budget.data.work.QueueScheduling
@@ -21,7 +30,11 @@ import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import java.io.File
+import java.time.Instant
 
 /**
  * Exercises [SessionManager] against a real [MockWebServer], the same way
@@ -32,7 +45,12 @@ import java.io.File
  * [SessionManager.signOut]'s KDoc). These tests assert the recorded request path directly, since
  * that is the bug a mocked [Session] or a fake [dev.otherworld.budget.data.remote.BudgetService]
  * can never catch.
+ *
+ * Robolectric, not pure JVM: [CatalogRepository] persists through a Room-backed [SnapshotStore],
+ * which needs a Context to open even for its in-memory driver (see [TestSnapshots.inMemory]).
  */
+@Config(sdk = [35], application = RobolectricTestApplication::class)
+@RunWith(RobolectricTestRunner::class)
 class SessionManagerTest {
 
     private lateinit var server: MockWebServer
@@ -40,6 +58,16 @@ class SessionManagerTest {
     private lateinit var queue: RecordingQueue
     private lateinit var scheduler: RecordingScheduler
     private lateinit var lastAccount: FakeLastAccount
+
+    /**
+     * The raw DAO behind [catalog]'s [SnapshotStore], kept alongside it so a test can check a
+     * row's existence directly -- unlike [SnapshotStore.read], [SnapshotDao.get] is not
+     * owner-scoped, so it proves a persisted snapshot was actually deleted rather than merely
+     * hidden behind [store] no longer holding the owner it was written for.
+     */
+    private lateinit var dao: SnapshotDao
+    private lateinit var catalog: CatalogRepository
+    private lateinit var check: CheckRepository
 
     @Before fun setUp() {
         server = MockWebServer().also { it.start() }
@@ -55,17 +83,30 @@ class SessionManagerTest {
     private val currencyCache = dev.otherworld.budget.data.remote.FallbackCurrencyCache()
     private val authExpiry = CredentialExpiry(
         InMemoryCredentialStore(),
-        javax.inject.Provider { CatalogRepository(FakeBudgetApi()) },
+        javax.inject.Provider { CatalogRepository(FakeBudgetApi(), TestSnapshots.inMemory(InMemoryCredentialStore())) },
+        javax.inject.Provider {
+            val snapshots = TestSnapshots.fake()
+            CheckRepository(FakeBudgetApi(), CatalogRepository(FakeBudgetApi(), snapshots), snapshots, now = { Instant.now() })
+        },
         currencyCache,
     )
 
     private fun sessionManager(serverUrl: String): SessionManager {
         store = InMemoryCredentialStore().apply { save(Credentials(serverUrl, "adam", "pw")) }
+        val db = Room.inMemoryDatabaseBuilder(
+            ApplicationProvider.getApplicationContext(), AppDatabase::class.java
+        ).allowMainThreadQueries().build()
+        dao = db.snapshots()
+        val snapshots = SnapshotStore(dao, store, now = { Instant.now() })
+        val api = FakeBudgetApi()
+        catalog = CatalogRepository(api, snapshots)
+        check = CheckRepository(api, catalog, snapshots, now = { Instant.now() })
         return SessionManager(
             store = store,
             service = TestApiFactory.service(store),
             queue = queue,
-            catalog = CatalogRepository(FakeBudgetApi()),
+            catalog = catalog,
+            check = check,
             scheduler = scheduler,
             lastAccount = lastAccount,
             lastServer = lastServer,
@@ -143,6 +184,24 @@ class SessionManagerTest {
 
         // Left behind, the previous server's brand colour would keep theming a logged-out app.
         assertTrue(theme.cleared)
+    }
+
+    @Test
+    fun `sign out clears persisted snapshots and the check sections`() = runTest {
+        server.enqueue(MockResponse().setResponseCode(200))
+        val manager = sessionManager(server.url("/").toString().trimEnd('/'))
+        check.refresh()      // fetches and persists every check kind, ACCOUNTS via the catalog
+        // dao.get, not catalog.accountsFetchedAt(): the row must actually be gone, not merely
+        // hidden by store no longer holding the owner it was written for.
+        assertNotNull(dao.get(SnapshotKind.ACCOUNTS.name))
+        assertNotNull(check.recent.value.data)
+
+        manager.signOut()
+
+        assertNull(dao.get(SnapshotKind.ACCOUNTS.name))
+        assertNull(dao.get(SnapshotKind.RECENT.name))
+        assertNull(check.recent.value.data)
+        assertNull(check.balances.value.data)
     }
 
     // --- signIn: reconciling a queue that outlived its server -------------------------------
@@ -239,6 +298,22 @@ class SessionManagerTest {
         assertTrue(theme.cleared)
         assertEquals("https://work.example", lastServer.get())
         assertEquals("https://work.example", store.load()!!.server)
+    }
+
+    @Test
+    fun `sign-in to a different server clears persisted snapshots and the check sections`() = runTest {
+        val manager = sessionManager("https://old.example")
+        lastServer.set("https://old.example")
+        check.refresh()      // persists snapshots under the old server, while its credentials are still valid
+        assertNotNull(dao.get(SnapshotKind.ACCOUNTS.name))
+        assertNotNull(check.budget.value.data)
+        store.clear()   // e.g. a credential expiry wiped the password but not the queue or the snapshot
+
+        manager.signIn(Credentials("https://work.example", "adam", "pw"))
+
+        assertNull(dao.get(SnapshotKind.ACCOUNTS.name))
+        assertNull(dao.get(SnapshotKind.BUDGET_STATUS.name))
+        assertNull(check.budget.value.data)
     }
 }
 

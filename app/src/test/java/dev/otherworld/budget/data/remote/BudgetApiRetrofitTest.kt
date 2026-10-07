@@ -1,9 +1,11 @@
 package dev.otherworld.budget.data.remote
 
+import dev.otherworld.budget.RobolectricTestApplication
 import dev.otherworld.budget.data.auth.Credentials
 import dev.otherworld.budget.data.auth.InMemoryCredentialStore
 import dev.otherworld.budget.data.remote.fake.FakeBudgetApi
 import dev.otherworld.budget.data.repo.CatalogRepository
+import dev.otherworld.budget.data.repo.TestSnapshots
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -19,11 +21,23 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import dev.otherworld.budget.domain.model.Direction
 import dev.otherworld.budget.domain.model.Money
+import dev.otherworld.budget.domain.model.TransferLink
 import java.io.File
 import java.math.BigDecimal
 import java.time.LocalDate
 
+/**
+ * Robolectric, not pure JVM: [TestApiFactory.create]'s default [CatalogRepository] now persists
+ * through a Room-backed [dev.otherworld.budget.data.repo.SnapshotStore] (see
+ * [TestSnapshots.inMemory]), which needs a Context to open even for its in-memory driver.
+ */
+@Config(sdk = [35], application = RobolectricTestApplication::class)
+@RunWith(RobolectricTestRunner::class)
 class BudgetApiRetrofitTest {
 
     private lateinit var server: MockWebServer
@@ -59,6 +73,33 @@ class BudgetApiRetrofitTest {
 
         assertEquals("Current Account", accounts.single().name)
         assertEquals("/ocs/v2.php/apps/budget/api/v1/accounts", server.takeRequest().path)
+    }
+
+    @Test
+    fun `accounts parse balance, base-currency balance, closed and shared`() = runTest {
+        server.enqueue(ok("""
+            [{"id":1,"name":"Savings","currency":"GBP","type":"savings",
+              "balance":"1450.00","balance_in_base_currency":"1690.12","base_currency":"EUR",
+              "closed":true,"shared":true}]
+        """.trimIndent()))
+
+        val account = api.accounts().getOrThrow().single()
+
+        assertEquals(Money(BigDecimal("1450.00"), "GBP"), account.balance)
+        assertEquals(Money(BigDecimal("1690.12"), "EUR"), account.balanceInBase)
+        assertTrue(account.closed)
+        assertTrue(account.shared)
+        assertEquals("savings", account.type)
+    }
+
+    @Test
+    fun `accounts from an older server parse with no balance`() = runTest {
+        server.enqueue(ok("""[{"id":1,"name":"A","currency":"GBP"}]"""))
+
+        val account = api.accounts().getOrThrow().single()
+
+        assertNull(account.balance)
+        assertFalse(account.closed)
     }
 
     @Test
@@ -115,7 +156,7 @@ class BudgetApiRetrofitTest {
         // accounts and OCR banner it fetched before the password was revoked -- a healthy screen
         // over a queue that cannot drain.
         val cached = FakeBudgetApi()
-        val catalog = CatalogRepository(cached)
+        val catalog = CatalogRepository(cached, TestSnapshots.fake())
         val api = TestApiFactory.create(store, catalog)
         catalog.accounts()                          // populates the cache
 
@@ -257,6 +298,91 @@ class BudgetApiRetrofitTest {
         assertFalse(server.takeRequest().body.readUtf8().contains("""name="splits""""))
     }
 
+    /** The value of one text part of a multipart body, or null when the part isn't there. */
+    private fun partValue(body: String, name: String): String? =
+        Regex("""name="$name"[\s\S]*?\r\n\r\n(.*?)\r\n""").find(body)?.groupValues?.get(1)
+
+    @Test
+    fun `a negative total is sent as a credit of the positive amount`() = runTest {
+        // The server refuses a negative amount (400) and wants type to carry the direction.
+        server.enqueue(ok("""{"id":9002}"""))
+        api.createTransaction(txnRequest().copy(total = Money(BigDecimal("-5.00"), "GBP")), idempotencyKey = "k").getOrThrow()
+
+        val body = server.takeRequest().body.readUtf8()
+        assertEquals("5.00", partValue(body, "amount"))
+        assertEquals("credit", partValue(body, "type"))
+    }
+
+    @Test
+    fun `a positive total sends no type, leaving the body as it always was`() = runTest {
+        // A row queued before this change may already be on the server under its key, so its
+        // replay must not change shape.
+        server.enqueue(ok("""{"id":9002}"""))
+        api.createTransaction(txnRequest(), idempotencyKey = "k").getOrThrow()
+
+        val body = server.takeRequest().body.readUtf8()
+        assertEquals("1.00", partValue(body, "amount"))
+        assertNull(partValue(body, "type"))
+    }
+
+    @Test
+    fun `a negative split total flips its parts too, so they still add up to the amount`() = runTest {
+        server.enqueue(ok("""{"id":9002}"""))
+        api.createTransaction(
+            txnRequest().copy(
+                total = Money(BigDecimal("-4.82"), "GBP"),
+                splits = listOf(
+                    dev.otherworld.budget.domain.model.SplitPart(Money(BigDecimal("-3.40"), "GBP"), 12, "Flat White"),
+                    dev.otherworld.budget.domain.model.SplitPart(Money(BigDecimal("-1.42"), "GBP"), null, "Tax"),
+                ),
+            ),
+            idempotencyKey = "k",
+        ).getOrThrow()
+
+        val body = server.takeRequest().body.readUtf8()
+        assertEquals("4.82", partValue(body, "amount"))
+        assertEquals("credit", partValue(body, "type"))
+        assertTrue(body.contains(""""amount":"3.40""""))
+        assertTrue(body.contains(""""amount":"1.42""""))
+        assertFalse(body.contains(""""amount":"-"""))
+    }
+
+    @Test
+    fun `createTransaction surfaces category_error while still succeeding`() = runTest {
+        // The server keeps a capture whose category the account's owner can't use, uncategorised.
+        server.enqueue(ok("""{"id":9002,"category_error":"Category not found. It must be one of the account owner's categories"}"""))
+        val created = api.createTransaction(txnRequest().copy(categoryId = 14), idempotencyKey = "k").getOrThrow()
+        assertEquals(9002L, created.id)
+        assertEquals("Category not found. It must be one of the account owner's categories", created.categoryError)
+    }
+
+    @Test
+    fun `a crypto row keeps its eight decimal places instead of vanishing from Activity`() = runTest {
+        server.enqueue(ok("""
+            [{"id":1,"merchant":"Exchange","date":"2026-10-01","amount":"0.02200000","currency":"BTC","account_name":"Wallet",
+              "account_id":3,"type":"credit","category_name":null,
+              "splits":[{"amount":"0.02000000","category_name":"Savings"},{"amount":"0.00200000","category_name":null}]}]
+        """.trimIndent()))
+
+        val row = api.recentTransactions().getOrThrow().single()
+
+        assertEquals(BigDecimal("0.02200000"), row.amount.amount)
+        assertEquals(listOf(BigDecimal("0.02000000"), BigDecimal("0.00200000")), row.splits.map { it.amount.amount })
+    }
+
+    @Test
+    fun `a balance in a three-place currency is read, not left blank`() = runTest {
+        server.enqueue(ok("""
+            [{"id":4,"name":"Amman","currency":"JOD","type":"checking","balance":"1250.500",
+              "balance_in_base_currency":"1384.12","base_currency":"GBP"}]
+        """.trimIndent()))
+
+        val account = api.accounts().getOrThrow().single()
+
+        assertEquals(BigDecimal("1250.500"), account.balance!!.amount)
+        assertEquals(BigDecimal("1384.12"), account.balanceInBase!!.amount)
+    }
+
     @Test
     fun `cancelling an in-flight call propagates the cancellation instead of fabricating a result`() {
         // Against the real Retrofit/OkHttp stack, not a fake: the fakes in the repository tests
@@ -278,6 +404,43 @@ class BudgetApiRetrofitTest {
             assertTrue(call.isCancelled)
             assertNull(returned)            // call() never handed a Result to a cancelled caller
         }
+    }
+
+    @Test
+    fun `recent parses direction, splits and transfer link`() = runTest {
+        server.enqueue(ok("""
+            [{"id":1,"merchant":"Tesco","date":"2026-03-12","amount":"24.31","currency":"GBP","account_name":"Current",
+              "account_id":1,"type":"credit","category_name":"Groceries",
+              "splits":[{"amount":"3.40","category_name":"Groceries","description":"Milk"},
+                        {"amount":"-31.20","category_name":null}]},
+             {"id":2,"merchant":"Transfer to Savings","date":"2026-03-11","amount":"50.00","currency":"GBP",
+              "account_name":"Current","account_id":1,"type":"debit",
+              "linked_transaction_id":77,"linked_account_name":"Savings"}]
+        """.trimIndent()))
+
+        val rows = api.recentTransactions().getOrThrow()
+
+        val credit = rows[0]
+        assertEquals(Direction.CREDIT, credit.direction)
+        assertEquals(2, credit.splits.size)
+        assertEquals(BigDecimal("-31.20"), credit.splits[1].amount.amount)
+
+        val debit = rows[1]
+        assertEquals(Direction.DEBIT, debit.direction)
+        assertEquals(TransferLink(77, "Savings"), debit.transfer)
+    }
+
+    @Test
+    fun `recent from an older server has UNKNOWN direction and no splits`() = runTest {
+        server.enqueue(ok("""
+            [{"id":1,"merchant":"Tesco","date":"2026-03-12","amount":"24.31","currency":"GBP","account_name":"Current"}]
+        """.trimIndent()))
+
+        val row = api.recentTransactions().getOrThrow().single()
+
+        assertEquals(Direction.UNKNOWN, row.direction)
+        assertTrue(row.splits.isEmpty())
+        assertNull(row.transfer)
     }
 
     @Test
@@ -337,5 +500,100 @@ class BudgetApiRetrofitTest {
         assertEquals("EUR", draft.total!!.currency)
         assertEquals("/ocs/v2.php/apps/budget/api/v1/ocr/extract", server.takeRequest().path)
         assertEquals("/ocs/v2.php/apps/budget/api/v1/capabilities", server.takeRequest().path)
+    }
+
+    private fun budgetStatusJson() = """
+        {"month":"2026-09","start_date":"2026-09-01","end_date":"2026-09-30","currency":"GBP",
+         "totals":{"budgeted":"1450.00","spent":"912.40","remaining":"537.60"},
+         "categories":[{"category_id":12,"name":"Groceries","parent_id":null,"type":"expense","period":"monthly",
+                        "budgeted":"400.00","carried":"0.00","spent":"431.20","remaining":"-31.20","shared":false}]}
+    """.trimIndent()
+
+    @Test
+    fun `budget status parses totals and lines including a negative remaining`() = runTest {
+        server.enqueue(ok(budgetStatusJson()))
+
+        val status = api.budgetStatus().getOrThrow()
+
+        assertEquals(BigDecimal("537.60"), status.remaining.amount)
+        assertEquals(BigDecimal("-31.20"), status.lines[0].remaining.amount)
+        assertEquals(LocalDate.of(2026, 9, 1), status.startDate)
+    }
+
+    @Test
+    fun `budget status reads a yearly line's year so far, and none for a monthly one`() = runTest {
+        server.enqueue(ok("""
+            {"month":"2026-10","start_date":"2026-10-01","end_date":"2026-10-31","currency":"GBP",
+             "totals":{"budgeted":"500.00","spent":"100.00","remaining":"400.00"},
+             "categories":[
+               {"category_id":20,"name":"Car","parent_id":null,"type":"expense","period":"yearly",
+                "budgeted":"100.00","carried":"0.00","spent":"100.00","remaining":"0.00","shared":false,
+                "period_to_date":{"start_date":"2026-01-01","end_date":"2026-12-31","budgeted":"1200.00","spent":"400.00"}},
+               {"category_id":12,"name":"Groceries","parent_id":null,"type":"expense","period":"monthly",
+                "budgeted":"400.00","carried":"0.00","spent":"0.00","remaining":"400.00","shared":false,
+                "period_to_date":null}]}
+        """.trimIndent()))
+
+        val (car, groceries) = api.budgetStatus().getOrThrow().lines
+
+        assertEquals(BigDecimal("1200.00"), car.periodToDate!!.budgeted.amount)
+        assertEquals(BigDecimal("400.00"), car.periodToDate!!.spent.amount)
+        assertNull(groceries.periodToDate)
+    }
+
+    @Test
+    fun `budget status sends month only when given`() = runTest {
+        server.enqueue(ok(budgetStatusJson()))
+        api.budgetStatus()
+        assertFalse(server.takeRequest().path!!.contains("month="))
+
+        server.enqueue(ok(budgetStatusJson()))
+        api.budgetStatus("2026-08")
+        assertTrue(server.takeRequest().path!!.contains("month=2026-08"))
+    }
+
+    @Test
+    fun `upcoming bills parse and send days`() = runTest {
+        server.enqueue(ok("""
+            {"days":14,"bills":[{"id":5,"name":"Rent","amount":"850.00","amount_type":"fixed","currency":"GBP",
+             "frequency":"monthly","next_due_date":"2026-09-01","overdue":true,"account_id":1,
+             "account_name":"Current","category_id":9,"is_transfer":false,"auto_pay":true,"shared":false}]}
+        """.trimIndent()))
+
+        val bills = api.upcomingBills(14).getOrThrow()
+
+        assertTrue(server.takeRequest().path!!.contains("days=14"))
+        val bill = bills.single()
+        assertEquals(5L, bill.id)
+        assertEquals(BigDecimal("850.00"), bill.amount.amount)
+        assertEquals(LocalDate.of(2026, 9, 1), bill.nextDueDate)
+        assertTrue(bill.overdue)
+        assertTrue(bill.autoPay)
+        assertEquals("Current", bill.accountName)
+        assertFalse(bill.shared)
+    }
+
+    @Test
+    fun `a bill whose amount type isn't fixed is an estimate`() = runTest {
+        // The server only works out a variable bill's real amount when it's paid; until then
+        // `amount` is the stored figure, so the app must not present it as exact.
+        fun bill(id: Int, amountType: String?) = """
+            {"id":$id,"name":"B$id","amount":"40.00",${amountType?.let { "\"amount_type\":\"$it\"," } ?: ""}
+             "currency":"GBP","frequency":"monthly","next_due_date":"2026-10-02"}
+        """.trimIndent()
+        server.enqueue(ok("""{"days":14,"bills":[${bill(1, "variable")},${bill(2, "fixed")},${bill(3, null)}]}"""))
+
+        val bills = api.upcomingBills(14).getOrThrow()
+
+        assertEquals(listOf(true, false, false), bills.map { it.estimated })
+    }
+
+    @Test
+    fun `capabilities read check_available, absent means false`() = runTest {
+        server.enqueue(ok("""{"ocr_available":true,"currency":"GBP","version":"2.41.0","check_available":true}"""))
+        assertTrue(api.capabilities().getOrThrow().checkAvailable)
+
+        server.enqueue(ok("""{"ocr_available":true,"currency":"GBP","version":"2.41.0"}"""))
+        assertFalse(api.capabilities().getOrThrow().checkAvailable)
     }
 }

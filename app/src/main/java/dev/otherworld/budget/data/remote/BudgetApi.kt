@@ -1,15 +1,26 @@
 package dev.otherworld.budget.data.remote
 
 import dev.otherworld.budget.domain.model.Account
+import dev.otherworld.budget.domain.model.BudgetStatus
 import dev.otherworld.budget.domain.model.Category
 import dev.otherworld.budget.domain.model.DraftTransaction
 import dev.otherworld.budget.domain.model.Money
 import dev.otherworld.budget.domain.model.RecentTransaction
+import dev.otherworld.budget.domain.model.SplitLine
 import dev.otherworld.budget.domain.model.SplitPart
+import dev.otherworld.budget.domain.model.UpcomingBill
 import java.io.File
 import java.time.LocalDate
 
-data class Capabilities(val ocrAvailable: Boolean, val currency: String, val version: String, val splitsAvailable: Boolean)
+data class Capabilities(
+    val ocrAvailable: Boolean,
+    val currency: String,
+    val version: String,
+    val splitsAvailable: Boolean,
+    // Absent (false) on an older server: the check side (balances, budget, bills) isn't
+    // available there, and the Overview tab shows its "update your server" state instead.
+    val checkAvailable: Boolean = false,
+)
 
 /**
  * The outcome of a successful [BudgetApi.createTransaction]: the new transaction's [id], plus
@@ -18,8 +29,12 @@ data class Capabilities(val ocrAvailable: Boolean, val currency: String, val ver
  * this is a success carrying a caveat, not a failure. Null when there was no split problem -- which,
  * until splits are actually sent, is always. A replay of an already-seen idempotency key never
  * re-reports a split error.
+ *
+ * [categoryError] is the same kind of caveat for the category: the account's owner can't use the
+ * one chosen (one of the caller's own, on someone else's shared account), so the server recorded
+ * the transaction without it. Null otherwise, and on an older server, which refused the post.
  */
-data class CreatedTransaction(val id: Long, val splitsError: String?)
+data class CreatedTransaction(val id: Long, val splitsError: String?, val categoryError: String? = null)
 
 data class CreateTransactionRequest(
     val accountId: Long,
@@ -61,4 +76,13 @@ interface BudgetApi {
      * characters -- a UUID is 36 -- or the server answers 400.
      */
     suspend fun createTransaction(request: CreateTransactionRequest, idempotencyKey: String): Result<CreatedTransaction>
+
+    /** `month` null lets the server pick the user's current budget month (spec §1.2). */
+    suspend fun budgetStatus(month: String? = null): Result<BudgetStatus>
+
+    /** [days] defaults to 14, matching the server's own default and clamp (spec §1.3). */
+    suspend fun upcomingBills(days: Int = 14): Result<List<UpcomingBill>>
+
+    /** The per-item parts of one transaction (spec §1.1), for a row whose `is_split` is true. */
+    suspend fun transactionSplits(id: Long): Result<List<SplitLine>>
 }

@@ -13,10 +13,11 @@ class CaptureStateConverter {
     @TypeConverter fun fromDb(raw: String): CaptureState = CaptureState.valueOf(raw)
 }
 
-@Database(entities = [PendingReceiptEntity::class], version = 4, exportSchema = true)
+@Database(entities = [PendingReceiptEntity::class, SnapshotEntity::class], version = 5, exportSchema = true)
 @TypeConverters(CaptureStateConverter::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun pendingReceipts(): PendingReceiptDao
+    abstract fun snapshots(): SnapshotDao
 
     companion object {
         /**
@@ -157,6 +158,29 @@ abstract class AppDatabase : RoomDatabase() {
                 )
                 db.execSQL("DROP TABLE `pending_receipts`")
                 db.execSQL("ALTER TABLE `pending_receipts_new` RENAME TO `pending_receipts`")
+            }
+        }
+
+        /**
+         * Adds the `snapshots` table ([SnapshotEntity]): the owner-scoped cache of read-only check
+         * data (accounts, categories, capabilities, budget status, upcoming bills, recent
+         * transactions) that lets the check screens show something offline.
+         *
+         * A plain `CREATE TABLE`, unlike every migration above -- there is no existing data to
+         * carry across (this is a brand-new table, empty until the app first fetches and caches
+         * something) and no `sqlite_sequence` concern (the primary key is the `TEXT` [SnapshotKind]
+         * name, not an autoincrementing id), so the recreate-and-copy dance those migrations need
+         * simply doesn't apply here. The `CREATE TABLE` text is Room's generated v5 SQL
+         * (`schemas/…AppDatabase/5.json`), for the same reason as the others: Room validates the
+         * migrated table against the compiled entity on the next open, and only its own generated
+         * SQL is guaranteed to match column affinity, nullability and the primary key exactly.
+         */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `snapshots` (`kind` TEXT NOT NULL, `owner` TEXT NOT NULL, " +
+                        "`json` TEXT NOT NULL, `fetchedAt` INTEGER NOT NULL, PRIMARY KEY(`kind`))"
+                )
             }
         }
     }

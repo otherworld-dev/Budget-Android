@@ -6,6 +6,7 @@ import dev.otherworld.budget.data.remote.BudgetApiError
 import dev.otherworld.budget.data.remote.BudgetService
 import dev.otherworld.budget.data.remote.FallbackCurrencyCache
 import dev.otherworld.budget.data.repo.CatalogRepository
+import dev.otherworld.budget.data.repo.CheckRepository
 import dev.otherworld.budget.data.repo.ReceiptQueue
 import dev.otherworld.budget.data.theme.ThemePalette
 import dev.otherworld.budget.data.work.QueueScheduling
@@ -31,6 +32,7 @@ class SessionManager @Inject constructor(
     private val service: BudgetService,
     private val queue: ReceiptQueue,
     private val catalog: CatalogRepository,
+    private val check: CheckRepository,
     private val scheduler: QueueScheduling,
     private val lastAccount: LastAccountStore,
     private val lastServer: LastServerStore,
@@ -47,8 +49,9 @@ class SessionManager @Inject constructor(
      * that was. When it differs, everything keyed to the old server is reconciled: FAILED rows
      * are demoted to mandatory review with their foreign account/category ids scrubbed
      * ([ReceiptQueue.parkFailedForServerChange]), the remembered default account is forgotten,
-     * and the catalog and fallback-currency caches are dropped so nothing from the old server
-     * is offered against the new one.
+     * and the catalog (memory *and* its persisted snapshots -- [CatalogRepository.clearPersisted])
+     * the check screens' sections ([CheckRepository.reset]) and fallback-currency caches are
+     * dropped so nothing from the old server is offered against the new one.
      *
      * NonCancellable: this runs in the onboarding screen's coroutine scope, and a rotation or
      * back-press mid-save must not leave credentials stored but the old server's FAILED rows
@@ -70,7 +73,8 @@ class SessionManager @Inject constructor(
         if (previousServer != null && previousServer != credentials.server) {
             queue.parkFailedForServerChange()
             lastAccount.clear()
-            catalog.invalidate()
+            check.reset()             // before the snapshots go, so an in-flight refresh can't rewrite one
+            catalog.clearPersisted()
             currencyCache.clear()
             // The old server's brand colour must not persist into the new session: revert to the
             // default now, so the new server's colour is fetched clean (onboarding calls refresh()
@@ -114,7 +118,8 @@ class SessionManager @Inject constructor(
 
         scheduler.cancelAll()
         queue.clearAll()          // deletes rows and their photos
-        catalog.invalidate()
+        check.reset()             // the check screens' figures, and any refresh still in flight
+        catalog.clearPersisted()
         lastAccount.clear()       // an account id belonging to the server we're leaving
         currencyCache.clear()     // ...and its currency; the next server states its own
         theme.clear()             // ...and its brand colour; signed out returns to the default

@@ -9,6 +9,7 @@ import dev.otherworld.budget.core.StringResources
 import dev.otherworld.budget.data.prefs.LastAccountStore
 import dev.otherworld.budget.data.remote.BudgetApiError
 import dev.otherworld.budget.data.remote.CreateTransactionRequest
+import dev.otherworld.budget.data.remote.CreatedTransaction
 import dev.otherworld.budget.data.repo.CatalogRepository
 import dev.otherworld.budget.data.repo.PostAlreadyInFlightException
 import dev.otherworld.budget.data.repo.ReceiptQueue
@@ -29,6 +30,15 @@ import javax.inject.Inject
  */
 data class SplitRowUi(val amount: Money, val description: String, val categorisable: Boolean, val categoryId: Long?)
 
+/**
+ * One receipt line item as the user edits it, before it is parsed. [amountText] is held as raw text
+ * (like [ReviewUiState.totalText]) rather than a [Money] so a half-typed amount is not lost or
+ * prematurely coerced; reconciliation parses it on every change via [Money.parse]. An extraction that
+ * misread a cost, a garbled name, a missing line, or an invented one is all corrected here, after
+ * which [ReviewViewModel.recomputeSplit] re-checks whether the items reconcile into a valid split.
+ */
+data class EditableItemUi(val description: String, val amountText: String)
+
 data class ReviewUiState(
     val loading: Boolean = true,
     val photoPath: String? = null,
@@ -48,16 +58,17 @@ data class ReviewUiState(
     val categories: List<Category> = emptyList(),
     val selectedAccountId: Long? = null,
     val selectedCategoryId: Long? = null,
-    val lineItems: List<LineItem> = emptyList(),
+    /** The receipt's line items, editable so a misread cost/name (or a missing/invented line) can be fixed. */
+    val editableItems: List<EditableItemUi> = emptyList(),
     val saving: Boolean = false,
     val saved: Boolean = false,
     val totalError: String? = null,
     val saveError: String? = null,
     /**
-     * A one-shot notice for a save that *succeeded* but whose per-item splits the server rejected
-     * (the transaction was still recorded). Distinct from [saveError], which is a failure to record
-     * at all: this fires alongside [saved] = true and the screen surfaces it on its way out. Null
-     * whenever splits were fine -- which, until splits are actually sent, is always.
+     * A one-shot notice for a save that *succeeded* but whose per-item splits, or category, the
+     * server dropped (the transaction was still recorded). Distinct from [saveError], which is a
+     * failure to record at all: this fires alongside [saved] = true and the screen surfaces it on
+     * its way out. Null whenever the server kept everything.
      */
     val postNotice: String? = null,
     /**
@@ -141,11 +152,11 @@ class ReviewViewModel @Inject constructor(
     val uiState: StateFlow<ReviewUiState> = _uiState.asStateFlow()
 
     /**
-     * The draft facts the split calculation needs, held here so [onTotalChanged] can recompute the
-     * split rows as the user edits the total without re-reading the queue row. Seeded once in
-     * [load]; the line items, tax and suggested category are otherwise fixed for the receipt.
+     * The draft facts the split calculation needs beyond the (now editable) items and total, held
+     * here so [recomputeSplit] can reach them without re-reading the queue row. Seeded once in
+     * [load]; tax, discount and the suggested category are fixed for the receipt. The line items
+     * themselves live in [ReviewUiState.editableItems] because the user can now edit them.
      */
-    private var draftLineItems: List<LineItem> = emptyList()
     private var draftTax: Money? = null
     private var draftDiscount: Money? = null
     private var draftSuggestedCategoryId: Long? = null
@@ -183,8 +194,7 @@ class ReviewViewModel @Inject constructor(
             ?: capabilities?.currency
             ?: "GBP"
 
-        // Held for onTotalChanged's recompute -- the split's inputs, minus the total the user edits.
-        draftLineItems = draft.lineItems
+        // Held for recomputeSplit -- the split's inputs beyond the editable items and total.
         draftTax = draft.tax
         draftDiscount = draft.discount
         draftSuggestedCategoryId = draft.suggestedCategoryId
@@ -215,33 +225,36 @@ class ReviewViewModel @Inject constructor(
             // server switch with their drafts intact; only FAILED rows get scrubbed). Category
             // is optional, so dropping an unresolvable suggestion is always safe.
             selectedCategoryId = draft.suggestedCategoryId?.takeIf { id -> categories.any { it.id == id } },
-            lineItems = draft.lineItems,
+            editableItems = draft.lineItems.map {
+                EditableItemUi(it.description, it.amount?.amount?.toPlainString().orEmpty())
+            },
             saveError = displayError(receipt?.lastError),
             accountsMessage = accountsMessageFor(accounts),
             accountsRetryable = accounts == null,
             splitsAvailable = capabilities?.splitsAvailable == true,
-        ).recomputeSplit(draft.lineItems, draft.tax, draft.discount, draft.suggestedCategoryId)
+        ).recomputeSplit()
     }
 
     /**
-     * Rebuilds the split fields from the current line items, draft tax, the parsed [ReviewUiState.totalText]
-     * and [ReviewUiState.splitsAvailable]. A receipt is [ReviewUiState.splittable] only when the server
-     * offers splits AND [SplitPlan] finds a reconciling set of rows. Each non-tax row defaults to
-     * [suggestedCategoryId] when that id is in the fetched [ReviewUiState.categories], but a category
-     * the user has already chosen survives a recompute -- matched by row index and description, so an
-     * unrelated edit to the total doesn't wipe the picks. The tax row is never categorised, and turning
-     * the total below reconciliation drops [ReviewUiState.splitEnabled] with [ReviewUiState.splittable].
+     * Rebuilds the split fields from the current [ReviewUiState.editableItems], draft tax, the parsed
+     * [ReviewUiState.totalText] and [ReviewUiState.splitsAvailable]. A receipt is
+     * [ReviewUiState.splittable] only when the server offers splits AND [SplitPlan] finds a reconciling
+     * set of rows -- so correcting a misread item amount, or adding/removing a line, flips splittability
+     * live, exactly as editing the total does. Each non-tax row defaults to the draft's suggested category
+     * when that id is in the fetched [ReviewUiState.categories], but a category the user has already chosen
+     * survives a recompute -- matched by row index and description, so an unrelated edit doesn't wipe the
+     * picks. The tax row is never categorised, and any edit that breaks reconciliation drops
+     * [ReviewUiState.splitEnabled] with [ReviewUiState.splittable].
      */
-    private fun ReviewUiState.recomputeSplit(
-        lineItems: List<LineItem>,
-        tax: Money?,
-        discount: Money?,
-        suggestedCategoryId: Long?,
-    ): ReviewUiState {
+    private fun ReviewUiState.recomputeSplit(): ReviewUiState {
+        // Items are parsed from their raw text on every recompute -- an unreadable one becomes a
+        // null amount, which SplitPlan treats as "can't reconcile", so the split simply stays off
+        // rather than erroring. tax/discount/suggestion come from the instance vars seeded in load().
+        val items = editableItems.map { LineItem(it.description, Money.parse(it.amountText, currency)) }
         val total = Money.parse(totalText, currency)
-        val plan = total?.let { SplitPlan.rows(lineItems, tax, discount, it) }
+        val plan = total?.let { SplitPlan.rows(items, draftTax, draftDiscount, it) }
         val splittable = splitsAvailable && plan != null
-        val defaultCategory = suggestedCategoryId?.takeIf { id -> categories.any { it.id == id } }
+        val defaultCategory = draftSuggestedCategoryId?.takeIf { id -> categories.any { it.id == id } }
         val rows = plan?.mapIndexed { i, row ->
             SplitRowUi(
                 amount = row.amount, description = row.description, categorisable = row.categorisable,
@@ -257,7 +270,7 @@ class ReviewViewModel @Inject constructor(
             splitEnabled = splitEnabled && splittable,
             splitRows = rows,
             splitBlockedNote =
-                if (splitsAvailable && !splittable && lineItems.isNotEmpty())
+                if (splitsAvailable && !splittable && items.isNotEmpty())
                     strings.get(R.string.review_split_unavailable)
                 else null,
         )
@@ -323,9 +336,41 @@ class ReviewViewModel @Inject constructor(
     fun onTotalChanged(value: String) = _uiState.update { state ->
         val invalid = value.isNotBlank() && Money.parse(value, state.currency) == null
         state.copy(totalText = value, totalError = if (invalid) strings.get(R.string.amount_hint) else null)
-            // The total is the split's one editable input: lowering it below the items' sum stops the
-            // receipt reconciling, so the rows, splittable and (if it was on) splitEnabled all update.
-            .recomputeSplit(draftLineItems, draftTax, draftDiscount, draftSuggestedCategoryId)
+            // Lowering the total below the items' sum stops the receipt reconciling, so the rows,
+            // splittable and (if it was on) splitEnabled all update.
+            .recomputeSplit()
+    }
+
+    // Editing the line items: extraction can misread a cost, garble a name, miss a line or invent
+    // one, any of which stops the items summing to the total and hides the split. Each edit re-runs
+    // recomputeSplit, so a corrected receipt re-offers the split the instant the items reconcile.
+    // A bad index is ignored rather than crashed; a blank/unreadable amount just keeps it non-split.
+
+    fun onItemDescriptionChanged(index: Int, value: String) = _uiState.update { state ->
+        state.copy(
+            editableItems = state.editableItems.mapIndexed { i, item ->
+                if (i == index) item.copy(description = value) else item
+            },
+        ).recomputeSplit()
+    }
+
+    fun onItemAmountChanged(index: Int, value: String) = _uiState.update { state ->
+        state.copy(
+            editableItems = state.editableItems.mapIndexed { i, item ->
+                if (i == index) item.copy(amountText = value) else item
+            },
+        ).recomputeSplit()
+    }
+
+    /** Appends a blank row for a line extraction missed; it stays non-reconciling until filled in. */
+    fun onItemAdded() = _uiState.update { state ->
+        state.copy(editableItems = state.editableItems + EditableItemUi("", "")).recomputeSplit()
+    }
+
+    /** Drops the line at [index] -- e.g. a phantom item extraction invented. Ignores a bad index. */
+    fun onItemRemoved(index: Int) = _uiState.update { state ->
+        if (index !in state.editableItems.indices) return@update state
+        state.copy(editableItems = state.editableItems.filterIndexed { i, _ -> i != index }).recomputeSplit()
     }
 
     /** Turns splitting on only when the receipt actually [ReviewUiState.splittable]; off is always honoured. */
@@ -385,12 +430,22 @@ class ReviewViewModel @Inject constructor(
                 lastAccount.set(accountId)
                 _uiState.update { it.copy(
                     saving = false, saved = true,
-                    postNotice = created.splitsError?.let { strings.get(R.string.review_split_saved_error) },
+                    postNotice = postNoticeFor(created),
                 ) }
             }.onFailure { error ->
                 _uiState.update { it.copy(saving = false, saveError = messageFor(error)) }
             }
         }
+    }
+
+    /**
+     * A split post omits the top-level category, so at most one of these can happen; the split
+     * notice is checked first all the same.
+     */
+    private fun postNoticeFor(created: CreatedTransaction): String? = when {
+        created.splitsError != null -> strings.get(R.string.review_split_saved_error)
+        created.categoryError != null -> strings.get(R.string.save_category_dropped)
+        else -> null
     }
 
     fun onDiscardClicked() = viewModelScope.launch {

@@ -1,17 +1,11 @@
-# Store graphics — outstanding
+# Store graphics — status
 
-This directory holds the visual assets for the Play and F-Droid listings. None
-are checked in yet because producing them needs a rendered build (an emulator
-or device running the app) and a design pass, neither of which is part of
-packaging. Before submitting to either store, add:
+- `icon.png` — 512×512 hi-res icon, the launcher's adaptive icon
+  (`app/src/main/res/drawable/ic_launcher_foreground.xml` on `#0082C9`) rendered full bleed.
+- `featureGraphic.png` — 1024×500, the same mark with the app name, for Google Play.
+- `phoneScreenshots/1.png`–`2.png` — Review and Quick Add, captured on-device in the dark
+  theme, cropped to 1440×2800 with the status and navigation bars removed (Play refuses a
+  screenshot whose long side is more than twice its short side).
 
-- `icon.png` — 512×512 PNG, the app icon. Can be exported from
-  `app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml` /
-  `app/src/main/res/drawable/ic_launcher_foreground.xml`.
-- `featureGraphic.png` — 1024×500 PNG (Play Store only).
-- `phoneScreenshots/1.png`, `2.png`, … — at least 2, ideally 4–8, showing
-  Capture, Review, Quick Add (the manual "Add transaction" form), Recent,
-  and Settings. PNG or JPEG, 16:9 or 9:16, 320–3840 px on the long edge
-  (Play's limits; F-Droid is more lenient).
-
-Delete this file once real assets land in its place.
+Still wanted: Overview and Activity screenshots, added as `phoneScreenshots/3.png`, `4.png`, …
+in listing order. The listing can take new screenshots at any time without a release.

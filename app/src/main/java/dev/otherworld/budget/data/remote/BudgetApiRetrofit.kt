@@ -80,7 +80,10 @@ class BudgetApiRetrofit @Inject constructor(
 
     override suspend fun capabilities() = call({ service.capabilities() }) { dto ->
         fallbackCurrency.value = dto.currency
-        Capabilities(dto.ocrAvailable, dto.currency, dto.version, splitsAvailable = dto.splitsAvailable)
+        Capabilities(
+            dto.ocrAvailable, dto.currency, dto.version,
+            splitsAvailable = dto.splitsAvailable, checkAvailable = dto.checkAvailable,
+        )
     }
 
     override suspend fun accounts() = call({ service.accounts() }) { it.map(AccountDto::toDomain) }
@@ -101,17 +104,23 @@ class BudgetApiRetrofit @Inject constructor(
     }
 
     override suspend fun createTransaction(request: CreateTransactionRequest, idempotencyKey: String) = call({
+        // A refund is typed as a negative amount, but the server refuses one: the direction is
+        // `type`'s job and amounts stay positive. Its split parts flip with it, so they still add
+        // up to the amount sent.
+        val refund = request.total.amount.signum() < 0
+        fun wire(money: Money) = (if (refund) money.amount.negate() else money.amount).toPlainString()
         service.createTransaction(
             idempotencyKey = idempotencyKey,
             accountId = request.accountId.toString().text(),
             categoryId = request.categoryId?.toString()?.text(),
             date = request.date.toString().text(),
             merchant = request.merchant.text(),
-            amount = request.total.amount.toPlainString().text(),
+            amount = wire(request.total).text(),
+            type = if (refund) "credit".text() else null,
             // Omitted entirely when there are no splits (an ordinary, single-category save) rather
             // than sent as an empty array -- exactly like `photo` below.
             splits = request.splits?.let { parts ->
-                splitsJson.encodeToString(parts.map { SplitWireDto(it.amount.amount.toPlainString(), it.categoryId, it.description) }).text()
+                splitsJson.encodeToString(parts.map { SplitWireDto(wire(it.amount), it.categoryId, it.description) }).text()
             },
             // Omitted entirely when there is no photo (a Quick Add manual entry) rather than sent
             // as an empty part: an empty `photo` would arrive server-side as a zero-byte upload,
@@ -129,7 +138,31 @@ class BudgetApiRetrofit @Inject constructor(
         if (dto.idempotencyKey != null && dto.idempotencyKey != idempotencyKey) {
             throw BudgetApiError.ServerError(0)
         }
-        CreatedTransaction(dto.id, dto.splitsError)
+        CreatedTransaction(dto.id, dto.splitsError, dto.categoryError)
+    }
+
+    override suspend fun budgetStatus(month: String?) = call({ service.budgetStatus(month) }) { dto ->
+        // A null here means the dates or totals didn't parse -- the same malformed-body outcome
+        // every other endpoint reports as ServerError(0), rather than a half-populated status.
+        dto.toDomain() ?: throw BudgetApiError.ServerError(0)
+    }
+
+    override suspend fun upcomingBills(days: Int) =
+        call({ service.upcomingBills(days) }) { dto -> dto.bills.mapNotNull { it.toDomain() } }
+
+    /**
+     * Known limitation: every amount is labelled in the server's *base* currency, not the
+     * transaction's own. SplitDto carries no currency (spec §1.1's split shape) and this call is
+     * given only the transaction id, not its currency, so a split on an account in another
+     * currency comes back with the right numbers under the wrong code. Nothing in
+     * the app calls this today -- Activity reads the splits embedded in the transactions list,
+     * which carry the transaction's currency -- so fix the labelling before anything does.
+     */
+    override suspend fun transactionSplits(id: Long) = call({ service.transactionSplits(id) }) { dto ->
+        // The base currency resolves the same way extract() does: the cached fallback first, one
+        // capabilities() round trip only if nothing has populated it yet this session.
+        val currency = fallbackCurrency.value ?: capabilities().getOrElse { throw it }.currency
+        dto.splits.mapNotNull { it.toDomain(currency) }
     }
 
     private fun String.text(): RequestBody = toRequestBody(PLAIN)

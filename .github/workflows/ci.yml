@@ -9,16 +9,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
 
+      # Held at v5 on purpose: v6 moved caching into gradle-actions-caching, a proprietary
+      # component under Gradle's own terms of use. v5 is the last MIT-licensed release and
+      # already runs on Node 24.
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v5
 
       - name: Make gradlew executable
         run: chmod +x gradlew

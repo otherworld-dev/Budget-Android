@@ -1,15 +1,22 @@
 package dev.otherworld.budget.ui.review
 
-import androidx.compose.ui.test.assertHasNoClickAction
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.lifecycle.SavedStateHandle
+import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import dev.otherworld.budget.core.AndroidStringResources
+import dev.otherworld.budget.data.auth.Credentials
+import dev.otherworld.budget.data.auth.InMemoryCredentialStore
+import dev.otherworld.budget.data.local.SnapshotDao
+import dev.otherworld.budget.data.local.SnapshotEntity
 import dev.otherworld.budget.data.prefs.LastAccountStore
 import dev.otherworld.budget.data.remote.CreateTransactionRequest
 import dev.otherworld.budget.data.remote.CreatedTransaction
@@ -19,17 +26,19 @@ import dev.otherworld.budget.data.repo.ExtractOutcome
 import dev.otherworld.budget.data.repo.PendingReceipt
 import dev.otherworld.budget.data.repo.ReceiptQueue
 import dev.otherworld.budget.data.repo.ReceiptRepository
+import dev.otherworld.budget.data.repo.SnapshotStore
 import dev.otherworld.budget.domain.model.CaptureState
 import dev.otherworld.budget.domain.model.DraftTransaction
 import dev.otherworld.budget.domain.model.LineItem
 import dev.otherworld.budget.domain.model.Money
+import java.io.File
+import java.math.BigDecimal
+import java.time.Instant
+import java.time.LocalDate
 import kotlinx.coroutines.flow.Flow
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.io.File
-import java.math.BigDecimal
-import java.time.LocalDate
 
 /**
  * Exercises [ReviewScreen] against a real [ReviewViewModel] built directly (no Hilt) --
@@ -61,8 +70,11 @@ class ReviewScreenTest {
     private fun viewModel(lastError: String? = null) = ReviewViewModel(
         savedStateHandle = SavedStateHandle(mapOf("receiptId" to 1L)),
         queue = FakeQueue(pending(lastError)),
-        catalog = CatalogRepository(FakeBudgetApi()),
+        catalog = CatalogRepository(FakeBudgetApi(), fakeSnapshotStore()),
         lastAccount = FakeLastAccount(),
+        // Real resources, not a fake: this test asserts on rendered text ("Total", "Save"), so
+        // it needs the actual strings.xml values, not a stand-in.
+        strings = AndroidStringResources(ApplicationProvider.getApplicationContext()),
         clock = { LocalDate.of(2026, 3, 20) },
     )
 
@@ -86,16 +98,13 @@ class ReviewScreenTest {
     }
 
     @Test
-    fun lineItemsRenderAsStaticTextWithNoClickAction() {
+    fun lineItemsAreEditableSoAMisreadItemCanBeFixed() {
         composeRule.setContent { ReviewScreen(viewModel = viewModel(), onDone = {}) }
         composeRule.waitForIdle()
 
-        // substring = true: the row renders "Milk 2L  £1.20" as a single Text (description
-        // + formatted amount per the brief's exact format string), so an exact match would
-        // never find it. This is the whole point of the display-only requirement: if a click
-        // handler (e.g. a per-line category picker) were ever added to a line item row, this
-        // assertion fails.
-        composeRule.onNodeWithText("Milk 2L", substring = true).assertHasNoClickAction()
+        // Line items used to be display-only. Since the line-item editing change they are text
+        // fields, so a misread description or cost can be corrected before splitting the receipt.
+        composeRule.onNodeWithText("Milk 2L", substring = true).assert(hasSetTextAction())
     }
 
     @Test
@@ -114,6 +123,25 @@ class ReviewScreenTest {
         composeRule.onNodeWithText(ReceiptRepository.INTERRUPTED_POST_MESSAGE).assertIsDisplayed()
     }
 }
+
+/**
+ * A [CatalogRepository] needs a [SnapshotStore] to satisfy its constructor, but this screen has
+ * no interest in persistence -- so a hand-rolled in-memory [SnapshotDao], not Room, duplicated
+ * here rather than shared across source sets (test and androidTest cannot see each other's
+ * classes; see [FakeQueue] below), matching this project's per-test-file fake convention.
+ */
+private class FakeSnapshotDao : SnapshotDao {
+    private val rows = mutableMapOf<String, SnapshotEntity>()
+    override suspend fun get(kind: String): SnapshotEntity? = rows[kind]
+    override suspend fun put(entity: SnapshotEntity) { rows[entity.kind] = entity }
+    override suspend fun clear() { rows.clear() }
+}
+
+private fun fakeSnapshotStore() = SnapshotStore(
+    FakeSnapshotDao(),
+    InMemoryCredentialStore(Credentials("https://cloud.example", "adam", "pw")),
+    now = { Instant.now() },
+)
 
 /**
  * Hand-rolled fake -- same pattern as ReviewViewModelTest's FakeReviewQueue, duplicated here

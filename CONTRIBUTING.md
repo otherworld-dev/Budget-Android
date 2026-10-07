@@ -3,7 +3,7 @@
 Thanks for taking a look. This project is small and deliberately narrow in
 scope — please read the "What it deliberately doesn't do" section of the
 [README](README.md) before proposing new features; a lot of things that
-sound reasonable (in-app budgets, account creation, multi-account support)
+sound reasonable (editing budgets, account creation, multi-account support)
 are out of scope by design, not by oversight.
 
 ## Development setup

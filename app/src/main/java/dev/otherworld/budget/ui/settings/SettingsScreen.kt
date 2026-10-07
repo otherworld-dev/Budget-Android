@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
@@ -39,8 +41,10 @@ import dev.otherworld.budget.R
 /**
  * Account, queue status, and licence information -- the one screen where a billing
  * surface could most easily creep in. There is deliberately no purchase entry, no
- * subscription status, no licence-key field, and no outbound link: the licences list
- * and the AGPL line below are static, in-app text, not links to anywhere.
+ * subscription status, no licence-key field, and no outbound link: the licences list,
+ * the privacy policy and the AGPL line below are static, in-app text, not links to
+ * anywhere. (Play wants the privacy policy reachable inside the app; the website's copy
+ * sits one click from the scanning plans, so it is shown here rather than linked.)
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,6 +56,7 @@ fun SettingsScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var showSignOutConfirm by remember { mutableStateOf(false) }
     var showLicences by remember { mutableStateOf(false) }
+    var showPrivacy by remember { mutableStateOf(false) }
 
     LaunchedEffect(uiState.signedOut) {
         if (uiState.signedOut) onSignedOut()
@@ -127,6 +132,9 @@ fun SettingsScreen(
             TextButton(onClick = { showLicences = true }) {
                 Text(stringResource(R.string.settings_licences))
             }
+            TextButton(onClick = { showPrivacy = true }) {
+                Text(stringResource(R.string.settings_privacy))
+            }
             Spacer(Modifier.height(8.dp))
             Text(
                 stringResource(R.string.settings_agpl),
@@ -158,6 +166,10 @@ fun SettingsScreen(
 
     if (showLicences) {
         LicencesDialog(onDismiss = { showLicences = false })
+    }
+
+    if (showPrivacy) {
+        PrivacyDialog(onDismiss = { showPrivacy = false })
     }
 }
 
@@ -207,6 +219,22 @@ private fun LicencesDialog(onDismiss: () -> Unit) {
                         )
                     }
                 }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_close)) }
+        },
+    )
+}
+
+@Composable
+private fun PrivacyDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.settings_privacy)) },
+        text = {
+            Column(modifier = Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
+                Text(stringResource(R.string.settings_privacy_body))
             }
         },
         confirmButton = {

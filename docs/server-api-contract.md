@@ -13,6 +13,15 @@ this document argued for. What changed on the server against the original
 contract, and how the app reconciled to it, is recorded inline below and
 summarised in *Idempotency key — implemented*.
 
+**Server 3.0 (2026-10).** Re-checked against the server's 3.0 work. Every v1 route the app uses
+is unchanged, and the additions it doesn't use (editing and deleting over v1, `edit_available`,
+an `owner` on accounts and categories) are ignored. Four changes needed the app to follow:
+budget lines are measured over the month whatever their period, with `period_to_date` added
+(*Check*, below); money comes in its currency's own decimal places (*Money*, below); a negative
+`amount` is refused; and a category the account's owner can't use is dropped with
+`category_error` rather than refused (both under *Recording a refund* and *Dropped category*,
+below).
+
 This is the contract the app was built against, with the things that only
 surfaced during implementation recorded here: the verified reason the routes
 must be `OCSController`, and the idempotency key that came out of the
@@ -28,12 +37,15 @@ Bearer token.
 
 | Method | Path | Request | Success `data` |
 | --- | --- | --- | --- |
-| `GET` | `capabilities` | — | `{ocr_available: bool, currency: "GBP", version: "2.41.0", splits_available?: bool}` |
-| `GET` | `accounts` | — | `[{id, name, currency}]` |
+| `GET` | `capabilities` | — | `{ocr_available: bool, currency: "GBP", version: "2.41.0", splits_available?: bool, check_available?: bool}` |
+| `GET` | `accounts` | — | `[{id, name, currency, type?, balance?, balance_in_base_currency?, base_currency?, closed?, shared?}]` |
 | `GET` | `categories` | — | `[{id, name, parent_id}]` |
-| `GET` | `transactions/recent?limit=50` | — | `[{id, merchant, date, amount, currency, account_name}]` |
+| `GET` | `transactions/recent?limit=50` | — | `[{id, merchant, date, amount, currency, account_name, account_id?, type?, category_name?, is_split?, splits?, linked_transaction_id?, linked_account_name?}]` |
+| `GET` | `transactions/{id}/splits` | — | `{splits: [...]}` |
+| `GET` | `budget/status?month=YYYY-MM` | — | budget status (Check section, below) |
+| `GET` | `bills/upcoming?days=N` | — | `{days, bills: [...]}` (Check section, below) |
 | `POST` | `ocr/extract` | multipart `image` | draft transaction (below) |
-| `POST` | `transactions` | header `Idempotency-Key`; multipart: `account_id`, `category_id?`, `date`, `merchant`, `amount`, `photo?`, `splits?` | `{id, idempotency_key, splits_error?}` |
+| `POST` | `transactions` | header `Idempotency-Key`; multipart: `account_id`, `category_id?`, `date`, `merchant`, `amount`, `type?`, `photo?`, `splits?` | `{id, idempotency_key, splits_error?, category_error?}` |
 
 `photo` is **optional**: the app's Quick Add screen records a transaction that has no receipt to
 photograph, and posts it through the same route with the `photo` part omitted entirely (not sent
@@ -41,6 +53,29 @@ empty) — so the server must accept a `POST transactions` with no file attached
 
 `category_id` is **omitted** (not sent empty) when uncategorised; the server treats an absent
 `category_id` as uncategorised.
+
+**Money.** Every amount, both ways, is a decimal string, never a JSON number. The server writes
+each in its currency's own decimal places, never fewer than two: `"24.31"`, `"-31.20"`, `"0.02200000"`
+for BTC, `"12.500"` for JOD. The app reads these exactly as written (`Money.fromServer`), not with
+the lenient parse it uses for what the user types, which takes `"1.234"` as grouped thousands and
+refuses more than two places. A server figure that isn't a plain decimal drops that row (or, for
+budget totals, fails the section), as before.
+
+**Recording a refund.** Amounts are positive and `type` (`"debit"` or `"credit"`, default
+`"debit"`) carries the direction; the server answers a negative `amount` with `400`. The app lets
+the user type a refund as a negative amount, so it posts that as `type=credit` with the amount made
+positive, and flips every split part's sign with it so the parts still add up to the amount sent.
+An ordinary purchase sends no `type` part at all, so its body is unchanged and a row queued under
+an older version replays under its key without a conflict. Every server version the app talks to
+already accepts `type` on create.
+
+**Dropped category.** A transaction lands in the account owner's ledger, so its category must be
+one of the owner's. When it isn't (the caller's own category on someone else's shared account),
+the server records the transaction uncategorised and says why in `category_error`, instead of
+refusing it. The app treats this as a successful save and shows a one-shot notice as Review or
+Quick Add closes ("Saved without a category: that one can't be used on this account."), as it
+does for `splits_error`. A post that carries `splits` omits the top-level `category_id`, so the two
+don't meet. An older server refused the post instead (a `400`, which went back to review).
 
 **Idempotency key.** The app sends a per-row key on every `POST transactions` as an
 `Idempotency-Key` **header** (the server also accepts an `idempotency_key` multipart field and
@@ -259,3 +294,139 @@ as a save error, since the money was recorded either way. The response also now 
 `is_split` and `photo_error`; all three are currently unread by the app (ignored by the JSON decoder,
 not modelled) and are noted here only so a future reader of this contract knows they exist on the
 wire.
+
+## Check (read-only)
+
+A later addition again: alongside capture, the app shows balances, this month's budget and
+upcoming bills. Everything in this section is read-only — nothing here writes to the server, and
+tapping a row only ever opens Budget on the web.
+
+**`check_available` gate.** `GET capabilities` carries `check_available: bool`, gating the whole
+feature the same way `splits_available` gates the split editor. Absent on an older server, and the
+app treats absence the same as `false`: the Overview tab shows a single explanatory state ("Update
+Budget on your server to see balances, budget and bills here") in place of its three sections, and
+Activity keeps rendering rows exactly as it does today — unsigned amounts, no split chip, no
+transfer collapse — rather than assume keys the server never sent.
+
+**`GET budget/status?month=YYYY-MM`.** `month` is optional and defaults to the caller's current
+budget month. Response (`ApiSerializer::budgetStatus()`):
+
+```json
+{
+  "month": "2026-09",
+  "start_date": "2026-09-01",
+  "end_date": "2026-09-30",
+  "currency": "GBP",
+  "totals": { "budgeted": "1450.00", "spent": "912.40", "remaining": "537.60" },
+  "categories": [
+    {
+      "category_id": 12,
+      "name": "Groceries",
+      "parent_id": null,
+      "type": "expense",
+      "period": "monthly",
+      "budgeted": "400.00",
+      "carried": "0.00",
+      "spent": "431.20",
+      "remaining": "-31.20",
+      "shared": false,
+      "period_to_date": null
+    }
+  ]
+}
+```
+
+`totals` covers expense categories only; `categories` still lists income lines, the app just
+doesn't display them. `remaining` can go negative — an overspent category counts against the
+total, not just its own row.
+
+The figures mirror the web Budget page exactly, which has consequences a client must respect:
+
+- A parent line's `budgeted` and `spent` already include its subcategories, which are listed
+  too, so lines must never be summed. The app shows the tree on its Budget detail screen and
+  leaves parents with listed subcategories out of Overview's "closest to running out".
+- `parent_id` is the line's parent on the Budget page, and that parent can be missing from
+  `categories` when it has no budget of its own. The app then shows the line at the top level.
+- Every line is the month's, whatever its `period`: `budgeted` is the budget's share of the
+  month (a weekly budget times 52 over 12, a third of a quarterly one, a twelfth of a yearly one,
+  plus any carry-over) and `spent` is the month's spending. So no row needs a period label.
+- A quarterly or yearly line also carries `period_to_date`: `{start_date, end_date, budgeted,
+  spent}` for its whole calendar quarter or year so far, `budgeted` being the full budget. It is
+  `null` for any other period. The Budget detail screen shows it under the month's figures
+  ("£400.00 of £1,200.00 this year"); Overview's compact rows leave it out. The app doesn't read
+  the dates.
+- `totals.spent` also counts expense categories with no budget, so it isn't the sum of the
+  lines. The app's headline uses `totals`.
+
+**`GET bills/upcoming?days=N`.** `days` is optional, defaults to 14, and is clamped to 1–90; a
+non-numeric value falls back to the default rather than a 500. Response:
+`{ "days": 14, "bills": [ ... ] }`, each bill (`ApiSerializer::bill()`):
+
+```json
+{
+  "id": 3,
+  "name": "Netflix",
+  "amount": "12.99",
+  "amount_type": "fixed",
+  "currency": "GBP",
+  "frequency": "monthly",
+  "next_due_date": "2026-09-28",
+  "overdue": false,
+  "account_id": 1,
+  "account_name": "Current account",
+  "category_id": 9,
+  "is_transfer": false,
+  "auto_pay": true,
+  "shared": false
+}
+```
+
+The list is sorted overdue first, then by `next_due_date`, and includes shared bills alongside
+the caller's own. When `amount_type` isn't `"fixed"`, `amount` is the stored figure: the server
+only works out the real amount when the bill is paid, so the app shows it as an estimate
+("est. £40.00"). An absent `amount_type` is treated as fixed.
+
+**Extended existing shapes.** `transactions/recent` and the single-transaction record gain keys,
+every one absent — not sent as `null` — on an older server. `accounts` gains nothing; the app
+simply reads more of what it already sends:
+
+- `accounts`: current servers already send `type`, `balance`, `balance_in_base_currency`,
+  `base_currency`, `closed` and `shared`, and the app now reads them for Overview's balances. A
+  shared account's `balance` runs through the same today-adjustment and currency conversion as an
+  owned one, so the two mean the same thing either way.
+- `transactions/recent` gains `account_id`, `type` (`"debit"` or `"credit"`; amounts themselves
+  stay positive, as everywhere in this contract), `category_name`, `is_split`, `splits`,
+  `linked_transaction_id` and `linked_account_name`. `is_split` is currently unread by the app
+  (ignored by the JSON decoder, not modelled) -- it derives a row's split state from whether
+  `splits` is empty rather than trusting a separate flag, and `is_split` is noted here only so a
+  future reader of this contract knows it's on the wire.
+- The single-transaction record (`GET transactions/{id}`) gains `linked_transaction_id`,
+  `linked_account_name` and `splits` (the split parts, in `SplitDto` shape, `[]` when the
+  transaction isn't split).
+
+**`linked_account_name` visibility.** Populated only when the other half of the transfer sits in
+an account visible to the caller — their own, or shared with them — else `null`, even though
+`linked_transaction_id` itself is still returned. The app renders a `null` name as a plain
+"Transfer" rather than naming an account the caller can't see.
+
+**`GET transactions/{id}/splits`** returns `{ "splits": [...] }`, the same shape as the inline
+`splits` key above, and 404s when the transaction sits outside the caller's effective accounts.
+It exists for completeness of the contract — the app reads splits from the list rows it already
+has and never calls this route itself.
+
+**Old and part-upgraded servers.** A 404 or 501 from `budget/status` or `bills/upcoming` — a
+server that answers `check_available: true` but hasn't actually shipped the route yet — marks
+that section unsupported. When only one of the two does, it is per-section: the Overview tab shows
+the Budget or Bills section as unsupported while the other sections carry on unaffected. When
+both do, Overview switches to the same whole-screen "Update Budget on your server" state as an
+absent `check_available`. Balances and
+Activity aren't gated this way: `accounts` and `transactions/recent` are existing routes that
+simply grew keys, so a 404 or 501 there is a genuine server error, not an old-server signal.
+
+A server fault on any of the check routes is a 400 with `ocs.data.error`, the same as the
+other v1 routes, not a 5xx. The app shows it as that section's error, with Retry; only a 404 or
+501 means the route is missing.
+
+Split parts on list rows come largest first; on `GET transactions/{id}` and its `/splits` they
+come in the order they were created. A split row's own `category_name` is `null`, because the
+categories are on its parts.

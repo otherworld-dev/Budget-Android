@@ -1,0 +1,117 @@
+package dev.otherworld.budget.data.local
+
+import dev.otherworld.budget.data.remote.fake.FakeCheckData
+import dev.otherworld.budget.domain.model.Account
+import dev.otherworld.budget.domain.model.BudgetLine
+import dev.otherworld.budget.domain.model.Money
+import dev.otherworld.budget.domain.model.PeriodToDate
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import java.math.BigDecimal
+
+/**
+ * Round-trips every [SnapshotKind]'s payload through [SnapshotCodec] using [FakeCheckData], the
+ * same fixture the fake API answers with -- so a codec bug here is exactly the shape of data the
+ * cache will actually see. `decode*` must never throw, malformed input included.
+ */
+class SnapshotCodecTest {
+
+    @Test fun `accounts round-trip, including a negative balance and a null balance`() {
+        // FakeCheckData.accounts has no account with a null balance -- every one of its rows
+        // carries a real Money, including "Old ISA" at exactly 0.00. Account's own KDoc is explicit
+        // that null and zero must never be confused, so a hand-built account with balance = null
+        // (never fetched, e.g. an older server's response) is added here to cover that case
+        // distinctly from the zero-balance one.
+        val noBalanceYet = Account(id = 4, name = "New Account", currency = "GBP")
+        val accounts = FakeCheckData.accounts + noBalanceYet
+
+        val back = SnapshotCodec.decodeAccounts(SnapshotCodec.encodeAccounts(accounts))!!
+        assertEquals(accounts.size, back.size)
+        assertEquals(accounts, back)
+        // FakeCheckData.accounts[1] ("Joint Account") carries a negative balance.
+        assertEquals(BigDecimal("-45.10"), back[1].balance!!.amount)
+        // "Old ISA" is a real, zero balance -- not null.
+        assertEquals(BigDecimal("0.00"), back[2].balance!!.amount)
+        // The hand-built account's balance/balanceInBase must survive as null, not as zero.
+        assertNull(back.last().balance)
+        assertNull(back.last().balanceInBase)
+    }
+
+    @Test fun `categories round-trip`() {
+        val categories = listOf(
+            dev.otherworld.budget.domain.model.Category(14, "Groceries", null),
+            dev.otherworld.budget.domain.model.Category(15, "Household", 14),
+        )
+        val back = SnapshotCodec.decodeCategories(SnapshotCodec.encodeCategories(categories))!!
+        assertEquals(categories, back)
+    }
+
+    @Test fun `capabilities round-trip`() {
+        val capabilities = dev.otherworld.budget.data.remote.Capabilities(
+            ocrAvailable = true, currency = "GBP", version = "2.41.0",
+            splitsAvailable = true, checkAvailable = true,
+        )
+        val back = SnapshotCodec.decodeCapabilities(SnapshotCodec.encodeCapabilities(capabilities))!!
+        assertEquals(capabilities, back)
+    }
+
+    @Test fun `budget status round-trips, including a negative remaining line`() {
+        val back = SnapshotCodec.decodeBudget(SnapshotCodec.encodeBudget(FakeCheckData.budget))!!
+        assertEquals(FakeCheckData.budget, back)
+        // The Groceries line is overspent -- remaining is negative and must survive as sent.
+        assertEquals(BigDecimal("-31.20"), back.lines.first { it.categoryId == 14L }.remaining.amount)
+    }
+
+    @Test fun `a yearly line's year so far survives the cache`() {
+        fun gbp(v: String) = Money(BigDecimal(v), "GBP")
+        val yearly = BudgetLine(20, "Car", null, "expense", "yearly",
+            gbp("100.00"), gbp("0.00"), gbp("100.00"), gbp("0.00"), false,
+            periodToDate = PeriodToDate(budgeted = gbp("1200.00"), spent = gbp("400.00")))
+        val budget = FakeCheckData.budget.copy(lines = FakeCheckData.budget.lines + yearly)
+
+        val back = SnapshotCodec.decodeBudget(SnapshotCodec.encodeBudget(budget))!!
+
+        assertEquals(PeriodToDate(gbp("1200.00"), gbp("400.00")), back.lines.first { it.categoryId == 20L }.periodToDate)
+    }
+
+    @Test fun `a budget cached before the year so far existed still decodes`() {
+        // What the previous app version wrote: every line, no periodToDate key at all.
+        val cached = SnapshotCodec.encodeBudget(FakeCheckData.budget).replace(""","periodToDate":null""", "")
+        assertFalse(cached.contains("periodToDate"))
+
+        assertEquals(FakeCheckData.budget, SnapshotCodec.decodeBudget(cached))
+    }
+
+    @Test fun `upcoming bills round-trip`() {
+        val back = SnapshotCodec.decodeBills(SnapshotCodec.encodeBills(FakeCheckData.bills))!!
+        assertEquals(FakeCheckData.bills, back)
+        // The fake's Phone bill is variable: the estimate flag must survive the cache.
+        assertTrue(back.first { it.name == "Phone" }.estimated)
+        assertFalse(back.first { it.name == "Council Tax" }.estimated)
+    }
+
+    @Test fun `recent transactions round-trip, including splits and a transfer pair`() {
+        val back = SnapshotCodec.decodeRecent(SnapshotCodec.encodeRecent(FakeCheckData.recent))!!
+        assertEquals(FakeCheckData.recent, back)
+
+        val split = back.first { it.id == 9001L }
+        assertEquals(2, split.splits.size)
+        assertEquals("Groceries", split.splits[0].categoryName)
+
+        val transferOut = back.first { it.id == 9003L }
+        assertEquals(9004L, transferOut.transfer!!.linkedTransactionId)
+        assertEquals("Joint Account", transferOut.transfer!!.linkedAccountName)
+    }
+
+    @Test fun `malformed json decodes to null rather than throwing`() {
+        assertNull(SnapshotCodec.decodeBudget("not json"))
+        assertNull(SnapshotCodec.decodeAccounts("not json"))
+        assertNull(SnapshotCodec.decodeCategories("not json"))
+        assertNull(SnapshotCodec.decodeCapabilities("not json"))
+        assertNull(SnapshotCodec.decodeBills("not json"))
+        assertNull(SnapshotCodec.decodeRecent("not json"))
+    }
+}

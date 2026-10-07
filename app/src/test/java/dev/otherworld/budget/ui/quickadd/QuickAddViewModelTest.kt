@@ -10,6 +10,7 @@ import dev.otherworld.budget.data.repo.ExtractOutcome
 import dev.otherworld.budget.data.repo.PendingReceipt
 import dev.otherworld.budget.data.repo.ReceiptQueue
 import dev.otherworld.budget.data.repo.ReceiptRepository
+import dev.otherworld.budget.data.repo.TestSnapshots
 import dev.otherworld.budget.domain.model.CaptureState
 import dev.otherworld.budget.domain.model.DraftTransaction
 import dev.otherworld.budget.ui.review.FakeLastAccount
@@ -41,7 +42,7 @@ class QuickAddViewModelTest {
         lastAccountId: Long? = null,
     ) = QuickAddViewModel(
         queue = queue,
-        catalog = CatalogRepository(api),
+        catalog = CatalogRepository(api, TestSnapshots.fake()),
         lastAccount = FakeLastAccount(lastAccountId),
         strings = FakeStringResources(),
         clock = { today },
@@ -157,7 +158,7 @@ class QuickAddViewModelTest {
     fun `a successful save remembers the account for next time`() = runTest(dispatcher) {
         val lastAccount = FakeLastAccount(null)
         val queue = FakeQuickAddQueue()
-        val vm = QuickAddViewModel(queue, CatalogRepository(FakeBudgetApi()), lastAccount, FakeStringResources()) { today }
+        val vm = QuickAddViewModel(queue, CatalogRepository(FakeBudgetApi(), TestSnapshots.fake()), lastAccount, FakeStringResources()) { today }
         advanceUntilIdle()
 
         vm.onAmountChanged("5.00")
@@ -165,6 +166,30 @@ class QuickAddViewModelTest {
         vm.onSaveClicked(); advanceUntilIdle()
 
         assertEquals(2L, lastAccount.get())
+    }
+
+    @Test
+    fun `a save whose category the server dropped still finishes but notifies`() = runTest(dispatcher) {
+        val queue = FakeQuickAddQueue().apply {
+            postResult = Result.success(CreatedTransaction(9002L, null, categoryError = "Category not found"))
+        }
+        val (vm, _) = viewModel(queue = queue); advanceUntilIdle()
+        vm.enterMinimum()
+        vm.onCategorySelected(15)
+        vm.onSaveClicked(); advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.saved)
+        assertEquals("Saved without a category: that one can't be used on this account.", vm.uiState.value.postNotice)
+    }
+
+    @Test
+    fun `an ordinary save has nothing to say on the way out`() = runTest(dispatcher) {
+        val (vm, _) = viewModel(); advanceUntilIdle()
+        vm.enterMinimum()
+        vm.onSaveClicked(); advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.saved)
+        assertNull(vm.uiState.value.postNotice)
     }
 
     // --- The architectural rule: everything goes through the queue -------------------------

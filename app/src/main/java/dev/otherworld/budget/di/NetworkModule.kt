@@ -73,6 +73,7 @@ object NetworkModule {
     fun okHttp(store: CredentialStore): OkHttpClient = OkHttpClient.Builder()
         .addInterceptor(BaseUrlInterceptor(store))
         .addInterceptor(AuthInterceptor(store))
+        .addInterceptor(ReadTimeoutInterceptor())   // GETs fail fast; see its KDoc
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)   // extraction can be slow on a small server
         .build()

@@ -1,8 +1,11 @@
 package dev.otherworld.budget.data.auth
 
+import dev.otherworld.budget.RobolectricTestApplication
 import dev.otherworld.budget.data.remote.FallbackCurrencyCache
 import dev.otherworld.budget.data.remote.fake.FakeBudgetApi
 import dev.otherworld.budget.data.repo.CatalogRepository
+import dev.otherworld.budget.data.repo.CheckRepository
+import dev.otherworld.budget.data.repo.TestSnapshots
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -12,17 +15,29 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import java.time.Instant
 import javax.inject.Provider
 
-/** Pure JVM: nothing here touches an Android API. */
+/**
+ * Robolectric, not pure JVM: [CatalogRepository] now persists through a Room-backed
+ * [dev.otherworld.budget.data.repo.SnapshotStore] (see [TestSnapshots.inMemory]), which needs a
+ * Context to open even for its in-memory driver.
+ */
 @OptIn(ExperimentalCoroutinesApi::class)
+@Config(sdk = [35], application = RobolectricTestApplication::class)
+@RunWith(RobolectricTestRunner::class)
 class CredentialExpiryTest {
 
     private val api = FakeBudgetApi()
-    private val catalog = CatalogRepository(api)
     private val store = InMemoryCredentialStore(Credentials("https://cloud.example", "adam", "pw"))
+    private val snapshots = TestSnapshots.inMemory(store)
+    private val catalog = CatalogRepository(api, snapshots)
+    private val check = CheckRepository(api, catalog, snapshots, now = { Instant.now() })
     private val currencyCache = FallbackCurrencyCache()
-    private val expiry = CredentialExpiry(store, Provider { catalog }, currencyCache)
+    private val expiry = CredentialExpiry(store, Provider { catalog }, Provider { check }, currencyCache)
 
     @Test
     fun `an expiry clears the credentials`() {
@@ -42,6 +57,23 @@ class CredentialExpiryTest {
         catalog.accounts()
 
         assertEquals(2, api.accountCalls)
+    }
+
+    @Test
+    fun `an expiry resets the check sections`() = runTest {
+        // The next sign-in may be a different user on the same server, which signIn cannot tell
+        // apart from the same one returning -- so the previous user's figures must go now.
+        check.refresh()
+        assertNotNull(check.balances.value.data)
+        assertNotNull(check.recent.value.data)
+
+        expiry.onUnauthorized(expiry.currentGeneration)
+
+        assertNull(check.balances.value.data)
+        assertNull(check.budget.value.data)
+        assertNull(check.bills.value.data)
+        assertNull(check.recent.value.data)
+        assertNull(check.recent.value.fetchedAt)   // so the next refresh can't skip it as fresh
     }
 
     @Test

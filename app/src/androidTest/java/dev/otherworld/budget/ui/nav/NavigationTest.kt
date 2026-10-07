@@ -2,15 +2,17 @@ package dev.otherworld.budget.ui.nav
 
 import android.Manifest
 import android.content.Intent
+import android.os.SystemClock
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
-import androidx.test.espresso.Espresso.pressBack
-import androidx.test.espresso.NoActivityResumedException
+import androidx.test.espresso.Espresso.pressBackUnconditionally
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import dagger.hilt.android.EntryPointAccessors
@@ -24,7 +26,7 @@ import dev.otherworld.budget.data.work.ReceiptNotifier
 import dev.otherworld.budget.di.TestSupportEntryPoint
 import dev.otherworld.budget.domain.model.CaptureState
 import kotlinx.coroutines.runBlocking
-import org.junit.Assert.assertThrows
+import org.junit.Assert.assertNotEquals
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -104,8 +106,10 @@ class NavigationTest {
 
     /**
      * Quick Add's only entry point. The constraint it encodes is as much what is *not* here as
-     * what is: no bottom bar and no drawer were added for it, so if this action ever leaves the
-     * Capture top bar the screen becomes unreachable, and nothing else in the suite would notice.
+     * what is: Quick Add isn't one of the bottom bar's three tabs (Task 7's
+     * [dev.otherworld.budget.ui.nav.TOP_LEVEL_ROUTES] is Capture/Overview/Activity only) and gets
+     * no drawer either, so if this action ever leaves the Capture top bar the screen becomes
+     * unreachable, and nothing else in the suite would notice.
      */
     @Test
     fun theCaptureTopBarReachesQuickAddAndComesBack() {
@@ -125,6 +129,56 @@ class NavigationTest {
             composeRule.onNodeWithText("Cancel").performClick()
             composeRule.waitForIdle()
             composeRule.onNodeWithText("Budget Companion").assertIsDisplayed()
+        }
+    }
+
+    /**
+     * Replaces the old "Recent button" coverage this suite had before Task 7: Recent's top-bar
+     * entry point on Capture is gone, and the Activity tab in [dev.otherworld.budget.ui.nav.BudgetBottomBar]
+     * is how the same destination is reached now. Task 9 replaced Activity's placeholder with the
+     * real screen, which has its own top-bar title reading "Activity" too -- the same text the
+     * bottom-bar tab already showed -- so a bare `onNodeWithText("Activity")` after navigating
+     * would find two nodes instead of proving anything. Asserting there are exactly two is the
+     * real-screen anchor instead: the placeholder never had a top bar of its own, so it could
+     * only ever produce one match. The tab tap itself does not change.
+     */
+    @Test
+    fun tappingTheActivityTabNavigatesToActivity() {
+        credentialStore.save(Credentials("http://127.0.0.1:1", "tester", "app-password"))
+
+        ActivityScenario.launch(MainActivity::class.java).use {
+            composeRule.onNodeWithText("Budget Companion").assertIsDisplayed()
+
+            composeRule.onNodeWithText("Activity").performClick()
+            composeRule.waitForIdle()
+            composeRule.onAllNodesWithText("Activity").assertCountEquals(2)
+
+            // Activity is one of the three tabs (Task 7's TOP_LEVEL_ROUTES), so the bar itself
+            // stays on screen -- unlike Settings or Quick Add, which replace it entirely. Both of
+            // these are still single matches: neither Capture nor Overview is the screen actually
+            // showing, so only their bottom-bar tab labels are on screen.
+            composeRule.onNodeWithText("Capture").assertIsDisplayed()
+            composeRule.onNodeWithText("Overview").assertIsDisplayed()
+        }
+    }
+
+    /**
+     * Settings is reached by pushing on top of a tab, not by tapping one, and it is not itself in
+     * [dev.otherworld.budget.ui.nav.TOP_LEVEL_ROUTES] -- so unlike the Activity tab above, landing
+     * there should make the bottom bar disappear rather than just change which item is selected.
+     */
+    @Test
+    fun bottomBarIsHiddenOnSettings() {
+        credentialStore.save(Credentials("http://127.0.0.1:1", "tester", "app-password"))
+
+        ActivityScenario.launch(MainActivity::class.java).use {
+            composeRule.onNodeWithText("Overview").assertIsDisplayed()
+
+            composeRule.onNodeWithText("Settings").performClick()
+            composeRule.waitForIdle()
+
+            composeRule.onAllNodesWithText("Overview").assertCountEquals(0)
+            composeRule.onAllNodesWithText("Activity").assertCountEquals(0)
         }
     }
 
@@ -163,11 +217,10 @@ class NavigationTest {
             // The whole back stack was cleared to Onboarding alone (popUpTo(0) { inclusive =
             // true }), so there is nothing left for Navigation-Compose's own BackHandler to pop
             // to: the system back press falls through to the Activity's default handling and
-            // finishes the app entirely, rather than returning to Settings -- or Capture.
-            // Espresso surfaces exactly that outcome as NoActivityResumedException instead of
-            // letting pressBack() return normally, which is what this asserts: no other screen
-            // was left resumed for Back to land on.
-            assertThrows(NoActivityResumedException::class.java) { pressBack() }
+            // leaves the app entirely, rather than returning to Settings -- or Capture.
+            // assertBackLeavesTheApp checks exactly that outcome: no other screen was left for
+            // Back to land on, so the app is no longer in the foreground.
+            it.assertBackLeavesTheApp()
         }
     }
 
@@ -199,8 +252,8 @@ class NavigationTest {
             composeRule.onNodeWithText("Connect to your Nextcloud").assertIsDisplayed()
 
             // Same back-stack contract as sign-out: nothing authenticated is left behind for
-            // Back to land on, so the press falls through to the Activity and finishes the app.
-            assertThrows(NoActivityResumedException::class.java) { pressBack() }
+            // Back to land on, so the press falls through to the Activity and leaves the app.
+            it.assertBackLeavesTheApp()
         }
     }
 
@@ -291,4 +344,94 @@ class NavigationTest {
             composeRule.onNodeWithText("Budget Companion").assertIsDisplayed()
         }
     }
+
+    /**
+     * A regression test for a bug [tappingTheActivityTabNavigatesToActivity] alone could not
+     * catch: `navigateToTab`'s `popUpTo` originally targeted
+     * `nav.graph.findStartDestination().id`, which is fixed at graph construction and, on this
+     * exact cold-start path, keeps naming `review/{receiptId}` -- a route that no longer exists
+     * on the stack once Discard's fallback below runs. `popUpTo` targeting a route that isn't in
+     * the back stack silently does nothing, so every tab tap pushed a new entry instead of
+     * reusing Capture's: `[Capture, Overview, Activity, Capture, ...]`, growing without bound and
+     * turning one Back press into a long walk through every tab ever visited instead of leaving.
+     * `navigateToTab` now pops up to [Routes.CAPTURE] itself, which -- unlike the graph's nominal
+     * start destination here -- is always what Discard's fallback below actually leaves on the
+     * stack.
+     */
+    @Test
+    fun tabSwitchingAfterAReviewColdStartDoesNotStackTabsUnbounded() {
+        credentialStore.save(Credentials("http://127.0.0.1:1", "tester", "app-password"))
+        runBlocking {
+            dao.insert(
+                PendingReceiptEntity(
+                    photoPath = "/tmp/notification-review-tabs.jpg",
+                    capturedAt = System.currentTimeMillis(),
+                    state = CaptureState.AWAITING_REVIEW,
+                ),
+            )
+        }
+
+        val intent = Intent(context, MainActivity::class.java).setAction(ReceiptNotifier.ACTION_REVIEW)
+
+        ActivityScenario.launch<MainActivity>(intent).use {
+            composeRule.waitUntil(timeoutMillis = 10_000) {
+                composeRule.onAllNodesWithText("Discard").fetchSemanticsNodes().isNotEmpty()
+            }
+            composeRule.onNodeWithText("Discard").performClick()
+            composeRule.waitForIdle()
+            val discardNodes = composeRule.onAllNodesWithText("Discard")
+            discardNodes[discardNodes.fetchSemanticsNodes().size - 1].performClick()
+
+            // Same landing point as reviewNotificationColdStartOpensReviewAndCanLeaveIt: Review
+            // was the start destination, popBackStack() was refused, and the onDone fallback
+            // above navigated to Capture with popUpTo(0) -- the exact state the bug needed.
+            composeRule.waitUntil(timeoutMillis = 10_000) {
+                composeRule.onAllNodesWithText("Budget Companion").fetchSemanticsNodes().isNotEmpty()
+            }
+
+            // Capture -> Overview -> Activity -> Capture. Each tap goes through navigateToTab.
+            // "Balances" is Overview's own section heading -- always rendered as long as the
+            // screen isn't in its old-server state, and unique on screen (unlike "Overview"
+            // itself, which the bottom-bar tab also shows), so it stands in for the now-deleted
+            // placeholder text as proof the real screen replaced it.
+            composeRule.onNodeWithText("Overview").performClick()
+            composeRule.waitForIdle()
+            composeRule.onNodeWithText("Balances").assertIsDisplayed()
+
+            // Same duplicate-text reasoning as tappingTheActivityTabNavigatesToActivity: the real
+            // ActivityScreen's own top-bar title reads "Activity" too, so two matches is the
+            // signal, not one.
+            composeRule.onNodeWithText("Activity").performClick()
+            composeRule.waitForIdle()
+            composeRule.onAllNodesWithText("Activity").assertCountEquals(2)
+
+            composeRule.onNodeWithText("Capture").performClick()
+            composeRule.waitForIdle()
+            composeRule.onNodeWithText("Budget Companion").assertIsDisplayed()
+
+            // One Back press is the assertion: with the fix, the back stack collapsed back down
+            // to a single Capture entry (each tab tap popped the previous one up to Capture
+            // rather than stacking on top of it), so nothing is left for Navigation-Compose's own
+            // BackHandler to pop to -- same contract the sign-out and expired-session tests above
+            // rely on -- and the press falls through and leaves the app. Under the original
+            // bug this press would have landed back on Activity instead of exiting.
+            it.assertBackLeavesTheApp()
+        }
+    }
+}
+
+/**
+ * Presses Back and asserts that it left the app rather than landing on another screen of it.
+ *
+ * Android 12 and later no longer finish a root launcher activity on Back, they move its task
+ * behind instead (seen on an Android 16 phone), so Espresso's old signal for "Back exited the
+ * app", NoActivityResumedException, never fires and the press times out waiting for focus. The
+ * Activity being left un-resumed is the same outcome stated directly: if Back had popped to
+ * another screen inside the app, the Activity would still be resumed and this fails.
+ */
+private fun ActivityScenario<MainActivity>.assertBackLeavesTheApp() {
+    pressBackUnconditionally()
+    val deadline = SystemClock.uptimeMillis() + 10_000
+    while (state == Lifecycle.State.RESUMED && SystemClock.uptimeMillis() < deadline) SystemClock.sleep(100)
+    assertNotEquals(Lifecycle.State.RESUMED, state)
 }

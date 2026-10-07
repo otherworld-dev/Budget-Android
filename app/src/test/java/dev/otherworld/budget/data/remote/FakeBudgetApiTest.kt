@@ -1,8 +1,11 @@
 package dev.otherworld.budget.data.remote
 
 import dev.otherworld.budget.data.remote.fake.FakeBudgetApi
+import dev.otherworld.budget.data.remote.fake.FakeCheckData
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -12,7 +15,7 @@ class FakeBudgetApiTest {
     @Test
     fun `returns accounts by default`() = runTest {
         val result = FakeBudgetApi().accounts()
-        assertEquals(2, result.getOrThrow().size)
+        assertEquals(3, result.getOrThrow().size)
     }
 
     @Test
@@ -91,5 +94,60 @@ class FakeBudgetApiTest {
             dev.otherworld.budget.domain.model.Money(java.math.BigDecimal("1.00"), "GBP"), 14, "X"))
         api.createTransaction(request().copy(splits = parts), "k").getOrThrow()
         assertEquals(parts, api.created.single().splits)
+    }
+
+    @Test
+    fun `a dropped category is reported on the create, not again on a replay`() = runTest {
+        // Like the server: the replay joins the transaction already recorded without its category.
+        val api = FakeBudgetApi(categoryError = "Category not found")
+        assertEquals("Category not found", api.createTransaction(request(), "key-1").getOrThrow().categoryError)
+        assertNull(api.createTransaction(request(), "key-1").getOrThrow().categoryError)
+    }
+
+    @Test
+    fun `budget status and bills return the fake data and count calls`() = runTest {
+        val api = FakeBudgetApi()
+        assertEquals(FakeCheckData.budget, api.budgetStatus().getOrThrow())
+        assertEquals(FakeCheckData.bills, api.upcomingBills().getOrThrow())
+        assertEquals(1, api.budgetCalls)
+        assertEquals(1, api.billsCalls)
+    }
+
+    @Test
+    fun `unsupportedCheckRoutes answers 404 for budget and bills but not accounts`() = runTest {
+        val api = FakeBudgetApi().apply { unsupportedCheckRoutes = true }
+
+        assertEquals(BudgetApiError.ServerError(404), api.budgetStatus().exceptionOrNull())
+        assertEquals(BudgetApiError.ServerError(404), api.upcomingBills().exceptionOrNull())
+        assertTrue(api.accounts().isSuccess)
+    }
+
+    @Test
+    fun `capabilities report checkAvailable`() = runTest {
+        val api = FakeBudgetApi()
+        assertTrue(api.capabilities().getOrThrow().checkAvailable)
+
+        api.checkAvailable = false
+        assertFalse(api.capabilities().getOrThrow().checkAvailable)
+    }
+
+    @Test
+    fun `recent includes a transfer pair and a split row`() = runTest {
+        val rows = FakeBudgetApi().recentTransactions().getOrThrow()
+
+        val transferOut = rows.first { it.id == 9003L }
+        val transferIn = rows.first { it.id == 9004L }
+        assertEquals(9004L, transferOut.transfer?.linkedTransactionId)
+        assertEquals(9003L, transferIn.transfer?.linkedTransactionId)
+
+        val split = rows.first { it.id == 9001L }
+        assertEquals(2, split.splits.size)
+    }
+
+    @Test
+    fun `transactionSplits returns the splits of the matching recent row, empty when none`() = runTest {
+        val api = FakeBudgetApi()
+        assertEquals(2, api.transactionSplits(9001).getOrThrow().size)
+        assertEquals(emptyList<Any>(), api.transactionSplits(9000).getOrThrow())
     }
 }

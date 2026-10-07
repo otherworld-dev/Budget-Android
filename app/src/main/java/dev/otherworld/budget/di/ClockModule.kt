@@ -4,6 +4,7 @@ import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
+import java.time.Instant
 import java.time.LocalDate
 
 /**
@@ -19,4 +20,8 @@ import java.time.LocalDate
 object ClockModule {
     @Provides
     fun clock(): () -> LocalDate = { LocalDate.now() }
+
+    /** Same reasoning as [clock], for [dev.otherworld.budget.data.repo.SnapshotStore]'s `fetchedAt`. */
+    @Provides
+    fun instant(): () -> Instant = { Instant.now() }
 }

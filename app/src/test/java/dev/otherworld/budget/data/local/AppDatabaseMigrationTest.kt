@@ -122,12 +122,39 @@ class AppDatabaseMigrationTest {
         }
     }
 
-    // The database version is now 4, so opening any older file runs the whole chain (1->2->3->4,
-    // 2->3->4, or 3->4). All three migrations are registered; opening is the schema check for the
-    // last one applied.
+    /**
+     * Creates the v4 database exactly as Room would have left it -- the v4 `createSql` and identity
+     * hash are copied verbatim from `schemas/…AppDatabase/4.json`. Used to test MIGRATION_4_5 in
+     * isolation from a v4-on-disk starting point.
+     */
+    private fun createV4(seed: SQLiteDatabase.() -> Unit) {
+        SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath(dbName), null).use { database ->
+            database.execSQL(
+                "CREATE TABLE IF NOT EXISTS `pending_receipts` (" +
+                    "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `photoPath` TEXT, " +
+                    "`capturedAt` INTEGER NOT NULL, `state` TEXT NOT NULL, `draftJson` TEXT, " +
+                    "`attempts` INTEGER NOT NULL, `lastError` TEXT, `accountId` INTEGER, " +
+                    "`categoryId` INTEGER, `idempotencyKey` TEXT NOT NULL, `splitsJson` TEXT)"
+            )
+            database.execSQL("CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)")
+            database.execSQL(
+                "INSERT OR REPLACE INTO room_master_table (id,identity_hash) " +
+                    "VALUES(42, 'ec14252c38f89b98e528c1fe67fa0ad4')"
+            )
+            database.seed()
+            database.version = 4
+        }
+    }
+
+    // The database version is now 5, so opening any older file runs the whole chain (1->2->3->4->5,
+    // 2->3->4->5, 3->4->5, or 4->5). All four migrations are registered; opening is the schema
+    // check for the last one applied.
     private fun open(): AppDatabase = Room
         .databaseBuilder(context, AppDatabase::class.java, dbName)
-        .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
+        .addMigrations(
+            AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3,
+            AppDatabase.MIGRATION_3_4, AppDatabase.MIGRATION_4_5,
+        )
         .allowMainThreadQueries()
         .build()
         .also { db = it }
@@ -263,5 +290,29 @@ class AppDatabaseMigrationTest {
         val rows = dao.observeAll().first()
         assertEquals(1, rows.size)
         assertNull(rows.single().splitsJson)
+    }
+
+    @Test
+    fun `migration 4 to 5 adds snapshots and keeps queue`() = runTest {
+        // A dev install carrying a queued receipt across the v4->v5 upgrade, which only adds the
+        // new `snapshots` table -- the existing queue must be untouched, and the new table must be
+        // usable straight away. Opening the file also *is* the schema check -- Room validates the
+        // migrated database against the compiled v5 entities.
+        createV4 {
+            execSQL(
+                "INSERT INTO pending_receipts (photoPath, capturedAt, state, attempts, idempotencyKey) " +
+                    "VALUES ('/data/receipts/a.jpg', 1700000000000, 'FAILED', 1, 'abc123')"
+            )
+        }
+
+        val database = open()
+        val rows = database.pendingReceipts().observeAll().first()
+        assertEquals(1, rows.size)
+        assertEquals("/data/receipts/a.jpg", rows.single().photoPath)
+
+        database.snapshots().put(
+            SnapshotEntity(kind = "ACCOUNTS", owner = "https://a.example|alice", json = "{}", fetchedAt = 1_700_000_000_002)
+        )
+        assertEquals("{}", database.snapshots().get("ACCOUNTS")!!.json)
     }
 }

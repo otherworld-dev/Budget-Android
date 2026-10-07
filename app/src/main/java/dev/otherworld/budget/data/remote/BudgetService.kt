@@ -32,6 +32,16 @@ interface BudgetService {
     @GET("$BASE/transactions/recent")
     suspend fun recent(@Query("limit") limit: Int): Response<OcsResponse<List<RecentDto>>>
 
+    /** `month` omitted (null) lets the server pick the user's current budget month. */
+    @GET("$BASE/budget/status")
+    suspend fun budgetStatus(@Query("month") month: String?): Response<OcsResponse<BudgetStatusDto>>
+
+    @GET("$BASE/bills/upcoming")
+    suspend fun upcomingBills(@Query("days") days: Int): Response<OcsResponse<UpcomingBillsDto>>
+
+    @GET("$BASE/transactions/{id}/splits")
+    suspend fun transactionSplits(@Path("id") id: Long): Response<OcsResponse<SplitsDto>>
+
     @Multipart
     @POST("$BASE/ocr/extract")
     suspend fun extract(@Part image: MultipartBody.Part): Response<OcsResponse<DraftDto>>
@@ -51,6 +61,12 @@ interface BudgetService {
         @Part("date") date: RequestBody,
         @Part("merchant") merchant: RequestBody,
         @Part("amount") amount: RequestBody,
+        /**
+         * `"credit"` for a refund, sent with the amount made positive: the server refuses a
+         * negative amount. Omitted (null) otherwise, which the server reads as a debit -- so an
+         * ordinary purchase's body is exactly what it was before this part existed.
+         */
+        @Part("type") type: RequestBody?,
         /**
          * A JSON array string, e.g. `[{"amount":"3.40","category_id":12,"description":"Flat
          * White"},{"amount":"1.42","description":"Tax"}]`. Omitted (null) for a single-category

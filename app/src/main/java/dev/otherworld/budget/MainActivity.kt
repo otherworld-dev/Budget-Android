@@ -33,6 +33,7 @@ import dev.otherworld.budget.data.work.ReceiptNotifying
 import dev.otherworld.budget.ui.capture.CaptureViewModel
 import dev.otherworld.budget.ui.nav.BudgetNavHost
 import dev.otherworld.budget.ui.nav.Routes
+import dev.otherworld.budget.ui.nav.navigateToOnboardingSignedOut
 import dev.otherworld.budget.ui.theme.BudgetReceiptsTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -169,8 +170,9 @@ class MainActivity : ComponentActivity() {
                             // the middle of (they must leave for a browser to complete it).
                             if (nav.currentDestination?.route == Routes.ONBOARDING) return@collect
                             // Same clear-everything navigation sign-out uses: after an expiry,
-                            // Back must not return into a screen that needs credentials.
-                            nav.navigate(Routes.ONBOARDING) { popUpTo(0) { inclusive = true } }
+                            // Back must not return into a screen that needs credentials, and no
+                            // saved tab stack may carry the old session into the next one.
+                            nav.navigateToOnboardingSignedOut()
                         }
                     }
 

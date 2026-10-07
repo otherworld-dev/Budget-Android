@@ -2,6 +2,7 @@ package dev.otherworld.budget.data.auth
 
 import dev.otherworld.budget.data.remote.FallbackCurrencyCache
 import dev.otherworld.budget.data.repo.CatalogRepository
+import dev.otherworld.budget.data.repo.CheckRepository
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -60,8 +61,8 @@ interface AuthExpiry {
 }
 
 /**
- * Clears the stored credentials, the catalog cache and the fallback-currency cache, then
- * announces the expiry.
+ * Clears the stored credentials, the catalog cache, the check sections and the fallback-currency
+ * cache, then announces the expiry.
  *
  * Deliberately *not* a sign-out: the queue rows and their photos are the user's un-saved work
  * and survive, so a revoked app password costs a re-login, never a receipt.
@@ -75,11 +76,28 @@ interface AuthExpiry {
  * and by the time [onUnauthorized] runs the singleton it resolves is the same instance every
  * screen reads from. [FallbackCurrencyCache] is per-server state for the same reason the
  * catalog is, and goes with it.
+ *
+ * [catalog]'s `invalidate()` only drops the in-memory values, never the persisted snapshots --
+ * deliberately, since this runs from a non-suspending failure handler on the request path and
+ * must not block it. It does not need to: [store]`.clear()` above already removes the
+ * credentials, and [dev.otherworld.budget.data.repo.SnapshotStore] scopes every read by whoever
+ * is signed in *now*, so the persisted rows become unreadable the instant those credentials are
+ * gone, with no separate deletion required. They stay on disk, orphaned, until the next sign-in
+ * resolves them: [SessionManager.signIn] clears them outright when the server differs, or leaves
+ * them -- legitimately the same owner's -- when it is the same server and user.
+ *
+ * [check]'s sections are reset here too, for the in-memory half of the same problem: the snapshots
+ * are owner-scoped but [CheckRepository]'s flows are not, and [SessionManager.signIn] cannot tell
+ * a different user on the same server from the same one returning. Left populated, the next user
+ * would be shown the previous one's balances -- and kept on them, since a non-forced refresh skips
+ * every section still inside its freshness window. From a [Provider] for the same cycle reason as
+ * [catalog]; [CheckRepository.reset] is non-suspending, so it is safe on the request path.
  */
 @Singleton
 class CredentialExpiry @Inject constructor(
     private val store: CredentialStore,
     private val catalog: Provider<CatalogRepository>,
+    private val check: Provider<CheckRepository>,
     private val currencyCache: FallbackCurrencyCache,
 ) : AuthExpiry {
 
@@ -109,6 +127,7 @@ class CredentialExpiry @Inject constructor(
         if (!generation.compareAndSet(requestGeneration, requestGeneration + 1)) return
         store.clear()
         catalog.get().invalidate()
+        check.get().reset()
         currencyCache.clear()
         _expirations.tryEmit(Unit)
     }
