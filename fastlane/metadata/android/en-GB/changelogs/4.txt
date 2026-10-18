@@ -1,0 +1,1 @@
+Subcategories in the category picker on Review and Quick Add are now listed under their parent, and the field shows the full path once one is picked, so two subcategories with the same name can be told apart.
