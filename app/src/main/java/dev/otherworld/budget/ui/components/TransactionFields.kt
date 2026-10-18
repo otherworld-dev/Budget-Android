@@ -2,6 +2,7 @@ package dev.otherworld.budget.ui.components
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -26,6 +27,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
 import dev.otherworld.budget.R
 import dev.otherworld.budget.domain.model.Account
 import dev.otherworld.budget.domain.model.Category
@@ -78,7 +80,11 @@ fun AccountDropdown(
     }
 }
 
-/** Includes a leading "None" entry that clears the category rather than requiring a pick. */
+/**
+ * Includes a leading "None" entry that clears the category rather than requiring a pick.
+ * Subcategories are indented under their parent in the menu, and the closed field shows the full
+ * path, so two subcategories with the same name can be told apart in both (#1).
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CategoryDropdown(
@@ -87,11 +93,12 @@ fun CategoryDropdown(
     onSelected: (Long?) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val selected = categories.find { it.id == selectedId }
+    val rows = remember(categories) { categories.pickerRows() }
+    val selected = rows.find { it.category.id == selectedId }
 
     ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
         OutlinedTextField(
-            value = selected?.name ?: stringResource(R.string.field_none),
+            value = selected?.path ?: stringResource(R.string.field_none),
             onValueChange = {},
             readOnly = true,
             label = { Text(stringResource(R.string.field_category)) },
@@ -108,18 +115,26 @@ fun CategoryDropdown(
                     expanded = false
                 },
             )
-            categories.forEach { category ->
+            rows.forEach { row ->
                 DropdownMenuItem(
-                    text = { Text(category.name) },
+                    text = { Text(row.category.name) },
                     onClick = {
-                        onSelected(category.id)
+                        onSelected(row.category.id)
                         expanded = false
                     },
+                    modifier = Modifier.semantics { contentDescription = row.path },
+                    contentPadding = PaddingValues(
+                        start = SubcategoryIndent * (row.depth + 1),
+                        end = SubcategoryIndent,
+                    ),
                 )
             }
         }
     }
 }
+
+/** A menu item's own start padding, and each level of subcategory adds one more. */
+private val SubcategoryIndent = 12.dp
 
 /**
  * `enabled = false` (rather than just `readOnly = true`) keeps the field from ever taking focus
